@@ -76,10 +76,16 @@ public class ChargeGaugeUI : MonoBehaviour
         }
 
         // 채움/색 갱신.
-        float c = playerHandler.ChargeAmount01;
+        // Image.fillAmount는 소스 스프라이트가 없으면 동작하지 않으므로(항상 꽉 참),
+        // Fill RectTransform의 가로 앵커로 직접 폭을 조절한다 → 왼쪽에서 오른쪽으로 채워진다.
+        float c = Mathf.Clamp01(playerHandler.ChargeAmount01);
         if (fillImage != null)
         {
-            fillImage.fillAmount = c;
+            RectTransform rt = fillImage.rectTransform;
+            rt.anchorMin = new Vector2(0f, 0f);
+            rt.anchorMax = new Vector2(c, 1f);
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
             fillImage.color = Color.Lerp(lowColor, highColor, c);
         }
     }
