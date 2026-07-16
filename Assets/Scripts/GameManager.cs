@@ -51,6 +51,10 @@ public class GameManager : MonoBehaviour
     [Tooltip("득점 축하 파티클 프리팹 (득점 팀 색으로 tint).")]
     [SerializeField] private GameObject goalEffectPrefab;
 
+    [Header("Flow")]
+    [Tooltip("Play 시 자동으로 경기를 시작할지. 메뉴/로비에서 시작을 제어하려면 끈다(메뉴가 BeginMatch 호출).")]
+    [SerializeField] private bool autoStartMatch = true;
+
     // --- 공개 상태 (MatchUI가 읽는다) ---
     public MatchState State { get; private set; }
     public bool IsPaused { get; private set; }
@@ -89,6 +93,14 @@ public class GameManager : MonoBehaviour
         if (player != null) { playerStart = player.position; playerStartRot = player.rotation; }
         if (opponent != null) { opponentStart = opponent.position; opponentStartRot = opponent.rotation; }
 
+        if (autoStartMatch)
+            StartCoroutine(NewMatchRoutine());
+    }
+
+    /// <summary>메뉴/로비에서 경기를 시작시킬 때 호출. (autoStartMatch를 끈 경우)</summary>
+    public void BeginMatch()
+    {
+        StopAllCoroutines();
         StartCoroutine(NewMatchRoutine());
     }
 
