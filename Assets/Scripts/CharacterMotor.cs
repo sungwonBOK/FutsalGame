@@ -30,6 +30,9 @@ public class CharacterMotor : MonoBehaviour
         state = GetComponent<CharacterState>();
         // X/Z 회전을 잠가 넘어지지 않게 한다. Y 회전(방향 전환)은 열어둔다.
         rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+        // 물리는 50Hz로 도는데 카메라는 매 프레임 이 몸을 따라간다. 보간이 없으면 슬라이딩 대시처럼
+        // 빠른 이동에서 한 스텝에 0.24m씩 튀는 게 그대로 화면 떨림으로 보인다.
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
     }
 
     /// <summary>이동 방향 주입 (XZ 평면). 크기가 1을 넘으면 정규화한다.</summary>
