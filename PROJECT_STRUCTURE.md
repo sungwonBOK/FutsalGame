@@ -1,74 +1,185 @@
-# Futsal Brawl 폴더 구조 안내
+# Futsal Brawl 프로젝트 구조
 
-이 문서는 저장소 전체 폴더 구조와 파일 배치 기준을 간단히 설명한다.
-새 폴더를 만들거나 새 파일을 어디에 둘지 확신이 없으면 이 문서를 먼저 확인한다.
+업데이트: 2026-07-18
+기준 브랜치: `develop_merge`
 
-## 1. 저장소 루트
-- 저장소 루트에는 프로젝트 전체에 공통으로 적용되는 문서와 최상위 폴더만 둔다.
-- 루트에는 Unity 작업과 직접 관련 없는 임시 파일, 개인 메모, 테스트 산출물을 두지 않는다.
+이 문서는 현재 체크아웃된 파일 배치를 기준으로 작성한다.
 
-현재 루트에 있는 주요 문서:
-- `AGENTS.md`, `CLAUDE.md`: AI 작업 공통 규칙
-- `PROJECT_STRUCTURE.md`: 폴더와 파일 배치 기준
-- `IMPLEMENTATION_STATUS.md`: 실제 사용 중인 기술, 도구, 구현 선택 기록
-- `WORKFLOW.md`: 협업 절차
-- `REVIEW_CHECKLIST.md`: 리뷰 기준
-- `README.md`: 저장소 개요
+## 루트
 
-## 2. 문서 배치 기준
-- 기획, 설계, 협업 규칙, 리뷰 기준 같은 문서는 루트 또는 별도 문서 폴더에 둔다.
-- 특정 기능의 구현 코드와 직접 연결되지 않는 설명 문서는 코드 폴더 안에 섞지 않는다.
-- 새 문서를 만들 때는 범위가 전체 프로젝트인지, 특정 기능인지 먼저 판단한다.
-- 전체 프로젝트 문서는 루트 또는 공용 문서 폴더에 둔다.
-- 특정 기능만 설명하는 문서는 해당 기능 문서 폴더를 만들어 그 안에 둔다.
+- `AGENTS.md`
+  - Codex/Claude 작업 규칙과 Unity 작업 제한 사항
 
-## 3. Unity 프로젝트 파일 배치 원칙
-- Unity 관련 실제 작업 파일은 역할과 책임이 분명한 위치에 둔다.
-- 새 파일은 가장 비슷한 책임을 가진 기존 파일 옆에 두는 것을 우선한다.
-- 새 최상위 폴더를 만들기 전에 기존 구조 안에서 해결 가능한지 먼저 확인한다.
-- Runtime 코드와 Editor 코드는 반드시 분리한다.
-- 공용 시스템과 특정 기능 전용 파일을 섞지 않는다.
+- `CLAUDE.md`
+  - Claude 작업용 보조 규칙
 
-권장 예시 구조:
+- `Futsal Brawl Game Design Document.docx`
+  - 게임 디자인 문서
+
+- `IMPLEMENTATION_STATUS.md`
+  - 현재 구현 상태 기록
+
+- `PROJECT_STRUCTURE.md`
+  - 현재 파일/폴더 배치 기준
+
+- `.gitignore`
+  - Git 제외 규칙
+
+## Unity 폴더
+
+### `Assets/`
+
+게임 에셋과 Runtime 스크립트가 들어 있는 Unity 루트다.
+
+- `Assets/DefaultNetworkPrefabs.asset`
+  - Netcode 기본 프리팹 목록 에셋
+
+- `Assets/InputSystem_Actions.inputactions`
+  - Input System 액션 정의
+
+- `Assets/Animation/`
+  - 캐릭터 및 게임 오브젝트 애니메이션
+
+- `Assets/Audio/`
+  - 게임 오디오 에셋
+
+- `Assets/Characters/`
+  - 캐릭터 관련 에셋
+
+- `Assets/Effects/`
+  - VFX와 파티클 관련 에셋
+
+- `Assets/Materials/`
+  - 게임용 머티리얼
+
+- `Assets/Prefabs/`
+  - 게임 프리팹
+
+- `Assets/Scenes/`
+  - Unity 씬
+
+- `Assets/Scripts/`
+  - Runtime C# 스크립트
+
+- `Assets/Scripts/Net/`
+  - Netcode/LAN 실험용 Runtime C# 스크립트
+
+- `Assets/Screenshots/`
+  - 개발 중 캡처 이미지
+
+- `Assets/Settings/`
+  - URP 관련 렌더링 설정 에셋
+
+### `Assets/Scripts/`
+
+현재 별도 `_Game` 폴더 없이 스크립트가 바로 배치되어 있다.
+
+- `AudioManager.cs`
+  - 게임 오디오 호출 관리
+
+- `AutoDestroyParticle.cs`
+  - 파티클 자동 제거
+
+- `BallImpactEffect.cs`
+  - 공 충돌 이펙트 처리
+
+- `CharacterAnimator.cs`
+  - 캐릭터 애니메이션 상태 연동
+
+- `CharacterMotor.cs`
+  - 캐릭터 이동/회전, 슬라이딩 dash 처리
+
+- `CharacterState.cs`
+  - 캐릭터 상태 관리
+
+- `CombatController.cs`
+  - 펀치, 슬라이딩 태클, 히트 처리, 쿨다운 상태 제공
+
+- `GameManager.cs`
+  - 경기 상태, 카운트다운, 득점, 일시정지, 리셋 흐름
+
+- `GoalNet.cs`
+  - 골대/골망 관련 처리
+
+- `GoalTrigger.cs`
+  - 득점 트리거 처리
+
+- `MatchUI.cs`
+  - 경기 UI 표시
+
+- `PlayerBallHandler.cs`
+  - 공 소유, 슛, 패스 처리
+
+- `PlayerInput.cs`
+  - 플레이어 입력 처리
+
+- `SimpleAIController.cs`
+  - 간단 AI 제어
+
+- `ChargeGaugeUI.cs`
+  - 플레이어 차징 게이지 표시
+
+- `AbilityCooldownUI.cs`
+  - 펀치/슬라이딩 쿨다운 HUD
+
+- `CameraViewSwitcher.cs`
+  - F5 카메라 시점 전환
+
+- `ViewHintUI.cs`
+  - F5 시점 전환 힌트 표시
+
+### `Assets/Scripts/Net/`
+
+- `LobbyController.cs`
+  - OnGUI 기반 메인 메뉴, LAN Host/Join, 방 슬롯 UI
+
+- `NetworkHudUI.cs`
+  - 간단한 Host/Join/Disconnect HUD
+
+- `ClientNetworkTransform.cs`
+  - 소유자 권위 NetworkTransform
+
+## 프로젝트 설정
+
+- `ProjectSettings/`
+  - Unity 프로젝트 설정
+
+- `Packages/manifest.json`
+  - Unity 패키지 선언
+
+- `Packages/packages-lock.json`
+  - Unity 패키지 lock 파일
+
+## 권장 목표 구조
+
+새 파일을 추가할 때는 기존 배치가 정리되기 전까지 무리하게 대규모 이동하지 않는다. 이후 구조 정리 작업을 승인받으면 다음처럼 정리하는 것을 목표로 한다.
+
 - `Assets/_Game/Scripts/Runtime/`
-  - 실제 게임 동작 코드
+  - 실제 게임 Runtime 코드
+
 - `Assets/_Game/Scripts/Editor/`
-  - Editor 전용 코드와 도구
-- `Assets/_Game/Prefabs/`
-  - 재사용할 프리팹
+  - Editor 전용 도구 코드
+
 - `Assets/_Game/Scenes/`
-  - 씬 파일
-- `Assets/_Game/Art/`
-  - 모델, 머티리얼, 텍스처 등 시각 에셋
+  - 직접 관리하는 게임 씬
+
+- `Assets/_Game/Prefabs/`
+  - 직접 관리하는 게임 프리팹
+
+- `Assets/_Game/Materials/`
+  - 게임용 머티리얼
+
 - `Assets/_Game/Audio/`
-  - 사운드 관련 에셋
-- `Assets/_Game/UI/`
-  - UI 프리팹, 스프라이트, UI 전용 리소스
-- `Assets/_Game/Tests/`
-  - 테스트 코드와 테스트 전용 리소스
+  - 게임용 오디오
 
-## 4. 새 파일을 어디에 둘지 결정하는 기준
-1. 이 파일이 Runtime 코드인가, Editor 전용 코드인가 먼저 판단한다.
-2. 특정 기능 전용인가, 여러 시스템이 공유하는 공용 파일인가를 판단한다.
-3. 기존에 가장 가까운 책임을 가진 폴더가 있으면 그 안에 둔다.
-4. 비슷한 파일이 전혀 없다면, 같은 계층 안에 의미가 분명한 새 폴더를 만든다.
-5. 새 최상위 폴더를 만들어야 한다면 먼저 팀 기준과 영향 범위를 확인한다.
+- `Assets/_Game/Effects/`
+  - VFX 프리팹과 이펙트 소재
 
-예시:
-- 플레이어 이동 코드 -> `Assets/_Game/Scripts/Runtime/` 아래의 플레이어 관련 위치
-- 커스텀 인스펙터나 자동 배치 도구 -> `Assets/_Game/Scripts/Editor/`
-- 테스트용 헬퍼 코드 -> `Assets/_Game/Tests/`
-- 경기장 프리팹 -> `Assets/_Game/Prefabs/`
+## 배치 원칙
 
-## 5. 폴더를 만들 때 지켜야 할 원칙
-- 이름만 보고도 역할을 알 수 있게 만든다.
-- 하나의 폴더에 성격이 전혀 다른 파일을 섞지 않는다.
-- 너무 이른 추상화로 폴더를 과하게 잘게 쪼개지 않는다.
-- 반대로 관련 없는 파일이 한곳에 쌓이면 책임 기준으로 분리한다.
-- 협업자가 처음 봐도 어디를 수정해야 할지 예측 가능해야 한다.
-
-## 6. 애매할 때 우선순위
-- 첫 번째 기준은 기존 구조와의 일관성이다.
-- 두 번째 기준은 유지보수성과 검색 용이성이다.
-- 세 번째 기준은 협업 충돌을 줄일 수 있는지 여부다.
-- 위치가 애매하면 무리하게 새 구조를 만들지 말고, 먼저 이슈나 문서에 판단 근거를 남긴다.
+- Runtime 코드와 Editor 코드는 분리한다.
+- `.unity`, `.prefab`, `.asset`, `.inputactions`는 직접 YAML 편집하지 않는다.
+- Scene/Prefab 설정은 가능하면 Unity Editor, Unity MCP, 또는 반복 가능한 Editor Tool로 변경한다.
+- `Library/`, `Temp/`, `Logs/`, `obj/`, `UserSettings/`는 관리 대상에서 제외한다.
+- 기능 구현 중 구조 이동은 최소화한다. 구조 정리는 별도 작업으로 분리한다.
+- Netcode/LAN 관련 파일은 승인 전 기능 확장하지 않고 현재 상태 기록 또는 정리 대상으로만 다룬다.
