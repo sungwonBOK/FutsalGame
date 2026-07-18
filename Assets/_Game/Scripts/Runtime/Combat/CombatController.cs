@@ -45,6 +45,7 @@ public class CombatController : MonoBehaviour
 
     private CharacterState state;
     private CharacterMotor motor;    private CharacterAnimator anim;
+    private ThirdPersonActionCamera actionCamera;
 
 
     private float lastPunchTime = -999f;
@@ -92,6 +93,9 @@ public class CombatController : MonoBehaviour
         state = GetComponent<CharacterState>();
         motor = GetComponent<CharacterMotor>();
         anim = GetComponent<CharacterAnimator>();
+
+        if (Camera.main != null)
+            actionCamera = Camera.main.GetComponent<ThirdPersonActionCamera>();
     }
 
     /// <summary>펀치 시도. 바라보는 방향 앞 짧은 범위를 순간 판정.</summary>
@@ -174,6 +178,7 @@ public class CombatController : MonoBehaviour
             Instantiate(hitEffectPrefab, hitPos, Quaternion.LookRotation(-dir));
         }
         if (AudioManager.Instance != null) AudioManager.Instance.PlayHit();
+        if (actionCamera != null) actionCamera.PlayHitShake();
 
         // 피격자가 공을 소유 중이면 공을 튕겨낸다 (상대 뒤쪽 방향 + 살짝 위로).
         PlayerBallHandler victimBall = victim.GetComponent<PlayerBallHandler>();

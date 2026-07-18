@@ -1,0 +1,19 @@
+{
+  "name": "FutsalGame.Runtime",
+  "rootNamespace": "",
+  "references": [
+    "Unity.InputSystem",
+    "Unity.Cinemachine",
+    "Unity.Netcode.Runtime",
+    "GUID:f2d49d9fa7e7eb3418e39723a7d3b92f"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

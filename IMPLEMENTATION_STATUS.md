@@ -3,94 +3,114 @@
 업데이트: 2026-07-18
 기준 브랜치: `develop_merge`
 
-이 문서는 현재 체크아웃된 파일 기준으로 구현 상태만 간단히 기록한다.
+현재 체크아웃 기준의 구현 상태만 기록한다. 세부 설계나 작업 이력은 이 문서에 길게 누적하지 않는다.
 
 ## 현재 요약
 
-현재 프로젝트에는 로컬 3D 풋살 프로토타입, 전투/차징 HUD, 카메라 전환, LAN 로비 실험 코드가 함께 들어 있다.
+- 로컬 3D 풋살 프로토타입이 구현되어 있다.
+- 캐릭터 이동, 공 소유/슛/패스, 전투, 득점/리셋, HUD가 기본 동작한다.
+- 카메라는 Futsal 전용 정책 코드와 Cinemachine backend를 함께 사용한다.
+- Netcode/LAN 코드는 `ExperimentalNet` 아래의 실험 코드로 유지한다.
 
 ## 사용 중인 주요 기술
 
-- Unity 3D 프로젝트
-- URP 패키지: `com.unity.render-pipelines.universal`
-- New Input System 패키지: `com.unity.inputsystem`
-- UGUI 패키지: `com.unity.ugui`
-- Netcode for GameObjects 패키지: `com.unity.netcode.gameobjects`
-- Unity MCP 패키지: `com.coplaydev.unity-mcp`
-
-주의: AGENTS 규칙상 별도 승인 전 온라인 기능 확장은 제외 범위다. 현재 Netcode/LAN 코드는 기존 실험 코드로 기록하되, 추가 확장은 승인 후 진행한다.
+- Unity 3D / URP
+- New Input System
+- UGUI
+- Cinemachine 3.1.7
+- Netcode for GameObjects
+- Unity MCP
 
 ## 구현 상태
 
-### 경기 흐름
+### Match
 
-- `Assets/Scripts/GameManager.cs`
-  - 경기 상태: `Kickoff`, `Playing`, `GameOver`
-  - 카운트다운, 경기 시간, 점수, 일시정지, 재시작 흐름 관리
-  - 득점 후 캐릭터와 공을 시작 위치로 리셋
+- `Assets/_Game/Scripts/Runtime/Match/GameManager.cs`
+  - `Kickoff`, `Playing`, `GameOver` 경기 상태
+  - 카운트다운, 경기 시간, 점수, 일시정지, 재시작
+  - 득점 후 캐릭터와 공 리셋
 
-### 캐릭터 이동
+- `Assets/_Game/Scripts/Runtime/Match/GoalTrigger.cs`
+  - 공 골인 트리거 처리
 
-- `Assets/Scripts/CharacterMotor.cs`
+### Characters
+
+- `Assets/_Game/Scripts/Runtime/Characters/CharacterMotor.cs`
   - `Rigidbody` 기반 이동/회전
-  - 외부 입력 방향 주입
   - 스턴 중 이동 제한
-  - 슬라이딩용 `Dash` 속도 적용
+  - 슬라이딩 dash 속도 적용
 
-### 전투
+- `Assets/_Game/Scripts/Runtime/Characters/CharacterState.cs`
+  - 캐릭터 상태 관리
 
-- `Assets/Scripts/CombatController.cs`
-  - 펀치와 슬라이딩 태클
-  - 쿨다운과 준비 상태 제공
+- `Assets/_Game/Scripts/Runtime/Characters/CharacterAnimator.cs`
+  - 이동/전투 상태와 애니메이션 연동
+
+### Ball and Combat
+
+- `Assets/_Game/Scripts/Runtime/Ball/PlayerBallHandler.cs`
+  - 공 소유, 드리블, 슛, 패스 처리
+
+- `Assets/_Game/Scripts/Runtime/Ball/BallImpactEffect.cs`
+  - 공 충돌 이펙트 처리
+
+- `Assets/_Game/Scripts/Runtime/Combat/CombatController.cs`
+  - 펀치, 슬라이딩 태클, 쿨다운
   - 히트 시 넉백, 스턴, 공 소유 해제, 이펙트/오디오 훅 호출
 
-### UI
+### Camera
 
-- `Assets/Scripts/ChargeGaugeUI.cs`
-  - 플레이어 슛/패스 차징 게이지 표시
+- `Assets/_Game/Scripts/Runtime/Camera/ThirdPersonActionCamera.cs`
+  - Futsal 전용 카메라 정책 owner
+  - 이동 방향 우선 yaw, 회전 deadzone/max speed, 약한 ball assist, FOV boost clamp, no-roll rig pose, capped shake 규칙 유지
 
-- `Assets/Scripts/AbilityCooldownUI.cs`
-  - 펀치와 슬라이딩 쿨다운 HUD 표시
+- `Assets/_Game/Scripts/Runtime/Camera/CinemachineActionCameraBackend.cs`
+  - Cinemachine follow rig target, lens FOV, impulse 전달 adapter
 
-- `Assets/Scripts/ViewHintUI.cs`
-  - F5 카메라 전환 힌트와 현재 시점 표시
+- Active scene camera 구성
+  - `Main Camera`: `CinemachineBrain`, `ThirdPersonActionCamera`, `CinemachineActionCameraBackend`
+  - `Futsal Cinemachine Third Person Camera`: `CinemachineCamera`, `CinemachineThirdPersonFollow`, `CinemachineHardLookAt`, `CinemachineImpulseListener`
+  - `CameraViewSwitcher`는 Main Camera transform 충돌 방지를 위해 비활성화 상태
 
-### 카메라
+### UI, Audio, VFX
 
-- `Assets/Scripts/CameraViewSwitcher.cs`
-  - F5 입력으로 기본 고정 시점과 3인칭 추적 시점 전환
+- `Assets/_Game/Scripts/Runtime/UI/`
+  - 경기 UI, 차징 게이지, 쿨다운 HUD, 시점 힌트 표시
 
-### LAN/Netcode 실험
+- `Assets/_Game/Scripts/Runtime/Audio/AudioManager.cs`
+  - 게임 오디오 호출 관리
 
-- `Assets/Scripts/Net/LobbyController.cs`
-  - OnGUI 기반 메인 메뉴, LAN Host/Join, 방 UI
-  - `NetworkList<TeamSlot>` 기반 팀 슬롯 동기화
-  - "게임 시작"은 현재 `GameManager.BeginMatch()` 호출 placeholder
+- `Assets/_Game/Scripts/Runtime/VFX/`
+  - 파티클 자동 제거, 골망 처리
 
-- `Assets/Scripts/Net/NetworkHudUI.cs`
-  - Host/Join/Disconnect용 간단 OnGUI HUD
+### ExperimentalNet
 
-- `Assets/Scripts/Net/ClientNetworkTransform.cs`
-  - 소유자 권위 `NetworkTransform` 파생 클래스
+- `Assets/_Game/Scripts/Runtime/ExperimentalNet/`
+  - LAN Host/Join, 방 슬롯 UI, 간단 NetworkTransform 실험
+  - 온라인 기능 확장은 별도 승인 전까지 보류
 
-## 현재 주요 에셋
+## 주요 에셋
 
-- `Assets/Scenes/SampleScene.unity`
-- `Assets/Prefabs/NetPlayer.prefab`
+- `Assets/_Game/Scenes/SampleScene.unity`
+- `Assets/_Game/Prefabs/NetPlayer.prefab`
 - `Assets/DefaultNetworkPrefabs.asset`
-- `Assets/InputSystem_Actions.inputactions`
-- `Assets/Animation/`
-- `Assets/Audio/`
-- `Assets/Characters/`
-- `Assets/Effects/`
-- `Assets/Materials/`
-- `Assets/Settings/`
-- `ProjectSettings/`
+- `Assets/_Game/Settings/InputSystem_Actions.inputactions`
 - `Packages/manifest.json`
 - `Packages/packages-lock.json`
 
+## 최근 검증
+
+- EditMode: `7/7 passed`
+- PlayMode Test Runner: `FutsalGame` suite `Passed` 반환, summary count는 `0`
+- Play Mode smoke:
+  - Cinemachine Brain active camera: `Futsal Cinemachine Third Person Camera`
+  - FOV: `85.00`
+  - Aim: `CinemachineHardLookAt`
+  - Unity console game error/warning: 0
+
 ## 남은 확인 항목
 
-- Play Mode에서 실제 조작, 득점, 리셋 흐름 확인
+- Play Mode에서 실제 키보드 조작, 득점, 리셋 흐름 수동 확인
 - LAN Host/Join 수동 확인
-- 캐릭터 컨트롤 기준을 `Rigidbody`로 유지할지 `CharacterController`로 맞출지 결정
+- `CameraViewSwitcher`를 제거할지, Cinemachine priority 전환 방식으로 재구성할지 결정
+- 캐릭터 컨트롤 기준을 `Rigidbody`로 유지할지 `CharacterController`로 바꿀지 결정

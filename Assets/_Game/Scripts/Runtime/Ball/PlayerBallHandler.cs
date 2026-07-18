@@ -50,6 +50,7 @@ public class PlayerBallHandler : MonoBehaviour
 
     private CharacterState state;
     private Collider ballCollider;    private CharacterAnimator anim;
+    private ThirdPersonActionCamera actionCamera;
 
     private float lastReleaseTime = -999f;
 
@@ -71,6 +72,9 @@ public class PlayerBallHandler : MonoBehaviour
     {
         state = GetComponent<CharacterState>();
         anim = GetComponent<CharacterAnimator>();
+
+        if (Camera.main != null)
+            actionCamera = Camera.main.GetComponent<ThirdPersonActionCamera>();
 
         if (ballRb == null)
         {
@@ -177,6 +181,7 @@ public class PlayerBallHandler : MonoBehaviour
         if (shootEffectPrefab != null && ballRb != null)
             Instantiate(shootEffectPrefab, ballRb.position, transform.rotation);
         if (AudioManager.Instance != null) AudioManager.Instance.PlayShoot();
+        if (actionCamera != null) actionCamera.PlayShootShake();
 
         ReleaseWithImpulse(transform.forward * force);
     }
