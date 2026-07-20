@@ -81,6 +81,16 @@ Assets/
 
 - `Ball/`
   - 공 소유, 드리블, 슛/패스, 공 충돌 처리
+  - 현재 책임 경계
+    - `BallConfig`: 소유, 드리블, 슛, 물리 튜닝 데이터
+    - `BallController`: 실제 현재 소유자, Rigidbody/Collider 상태, 소유 해제와 자유 공 물리의 단일 권한
+    - `BallPossessionController`: 플레이어별 초기 획득, 사거리 내 재획득, 재획득 지연, 해제 시각, 소유 정리 규칙
+    - `PlayerBallHandler`: 기존 AI, Input, Combat, UI, Match 호출자를 위한 호환 facade. 현재는 소유 위임과 함께 차징, 슛, 드리블 위치, 연출도 담당한다.
+  - 목표 구조 (필요성이 확인될 때만 다음 작업으로 진행)
+    - `BallInteractionController`: 차징, 슛/패스 힘 계산, 드리블 위치, 슛 연출을 `PlayerBallHandler`에서 분리한다.
+    - `PlayerBallHandler`: `CurrentOwner`, `HasBall`, `Shoot`, `ForceRelease`, `ClearPossession`, `IsCharging`, `ChargeAmount01` API를 유지하며 possession/interaction 내부로 위임한다.
+    - 캐릭터 상태 계층은 이동/기절 등 행동 권한을 제공하고, Ball 코드는 권한을 판단해 소유·상호작용을 허용하거나 취소한다.
+    - Combat은 피격 대상 판정 후 facade에 공 해제를 요청할 뿐, `BallController`의 Rigidbody·Collider·소유 상태를 직접 변경하지 않는다.
 
 - `Combat/`
   - 펀치, 태클, 히트 판정, 스턴, 넉백, 쿨다운

@@ -13,7 +13,6 @@ using UnityEngine;
 /// 기절 중에는 아무 판단/행동도 하지 않는다(기존 기절 로직 존중).
 /// </summary>
 [RequireComponent(typeof(CharacterState))]
-[RequireComponent(typeof(CharacterMotor))]
 [RequireComponent(typeof(CombatController))]
 [RequireComponent(typeof(PlayerBallHandler))]
 public class SimpleAIController : MonoBehaviour
@@ -43,7 +42,7 @@ public class SimpleAIController : MonoBehaviour
     [SerializeField] private float decisionInterval = 0.15f;
 
     private CharacterState state;
-    private CharacterMotor motor;
+    private CharacterLocomotion locomotion;
     private CombatController combat;
     private PlayerBallHandler handler;
 
@@ -56,7 +55,10 @@ public class SimpleAIController : MonoBehaviour
     private void Awake()
     {
         state = GetComponent<CharacterState>();
-        motor = GetComponent<CharacterMotor>();
+        locomotion = GetComponent<CharacterLocomotion>();
+        if (locomotion == null)
+            locomotion = gameObject.AddComponent<CharacterLocomotion>();
+
         combat = GetComponent<CombatController>();
         handler = GetComponent<PlayerBallHandler>();
 
@@ -74,14 +76,14 @@ public class SimpleAIController : MonoBehaviour
         // 킥오프 대기/경기 종료 중엔 판단/행동 정지.
         if (!GameManager.PlayActive)
         {
-            motor.SetMoveInput(Vector3.zero);
+            locomotion.SetMoveInput(Vector3.zero);
             return;
         }
 
         // 기절 중이면 아무 판단/행동도 하지 않는다 (이동 정지).
         if (state.IsStunned)
         {
-            motor.SetMoveInput(Vector3.zero);
+            locomotion.SetMoveInput(Vector3.zero);
             return;
         }
 
@@ -97,7 +99,7 @@ public class SimpleAIController : MonoBehaviour
             case AIState.ChaseBall: DoChaseBall(); break;
             case AIState.Attack:    DoAttack();    break;
             case AIState.Defend:    DoDefend();    break;
-            default:                motor.SetMoveInput(Vector3.zero); break;
+            default:                locomotion.SetMoveInput(Vector3.zero); break;
         }
     }
 
@@ -114,13 +116,13 @@ public class SimpleAIController : MonoBehaviour
 
     private void DoChaseBall()
     {
-        if (ball == null) { motor.SetMoveInput(Vector3.zero); return; }
+        if (ball == null) { locomotion.SetMoveInput(Vector3.zero); return; }
         MoveToward(ball.position); // 가까워지면 PlayerBallHandler가 자동으로 소유
     }
 
     private void DoAttack()
     {
-        if (attackGoal == null) { motor.SetMoveInput(Vector3.zero); return; }
+        if (attackGoal == null) { locomotion.SetMoveInput(Vector3.zero); return; }
 
         Vector3 goalPos = attackGoal.position;
         MoveToward(goalPos); // 골 방향으로 드리블 (motor가 그 방향을 바라보게 회전)
@@ -141,7 +143,7 @@ public class SimpleAIController : MonoBehaviour
     private void DoDefend()
     {
         PlayerBallHandler owner = PlayerBallHandler.CurrentOwner;
-        if (owner == null) { motor.SetMoveInput(Vector3.zero); return; }
+        if (owner == null) { locomotion.SetMoveInput(Vector3.zero); return; }
 
         Vector3 targetPos = owner.transform.position;
         MoveToward(targetPos); // 공 가진 플레이어에게 접근
@@ -166,10 +168,10 @@ public class SimpleAIController : MonoBehaviour
         dir.y = 0f;
         if (dir.magnitude <= arriveDistance)
         {
-            motor.SetMoveInput(Vector3.zero);
+            locomotion.SetMoveInput(Vector3.zero);
             return;
         }
-        motor.SetMoveInput(dir.normalized);
+        locomotion.SetMoveInput(dir.normalized);
     }
 
     private static float PlanarDistance(Vector3 a, Vector3 b)

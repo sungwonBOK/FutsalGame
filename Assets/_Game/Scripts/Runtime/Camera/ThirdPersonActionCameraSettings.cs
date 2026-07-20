@@ -14,11 +14,15 @@ public class ThirdPersonActionCameraSettings : ScriptableObject
     [Min(1f)] public float maxRotationSpeed = 220f;
     [Min(0f)] public float rotationDeadZone = 8f;
     [Min(0f)] public float movementPrioritySpeed = 0.75f;
+    [Range(30f, 180f)] public float quickTurnAngle = 75f;
+    [Min(0.01f)] public float quickTurnSmoothTime = 0.08f;
+    [Min(1f)] public float quickTurnMaxRotationSpeed = 720f;
 
     [Header("Ball Assist")]
     [Range(0f, 1f)] public float ballAssistStrength = 0.22f;
     [Range(0f, 120f)] public float ballAssistEdgeAngle = 35f;
     [Range(45f, 179f)] public float ballAssistMaxAngle = 120f;
+    [Range(0f, 30f)] public float ballAssistActiveInputMaxAngle = 6f;
 
     [Header("Collision")]
     [Min(0.05f)] public float collisionRadius = 0.35f;

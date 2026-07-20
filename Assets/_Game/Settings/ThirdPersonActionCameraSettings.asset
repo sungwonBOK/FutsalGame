@@ -16,13 +16,17 @@ MonoBehaviour:
   height: 4.1
   lookAtHeight: 1.7
   positionSmoothTime: 0.12
-  rotationSmoothTime: 0.24
-  maxRotationSpeed: 220
+  rotationSmoothTime: 0.32
+  maxRotationSpeed: 170
   rotationDeadZone: 8
   movementPrioritySpeed: 0.75
+  quickTurnAngle: 105
+  quickTurnSmoothTime: 0.08
+  quickTurnMaxRotationSpeed: 320
   ballAssistStrength: 0.22
   ballAssistEdgeAngle: 35
   ballAssistMaxAngle: 120
+  ballAssistActiveInputMaxAngle: 6
   collisionRadius: 0.35
   minCollisionDistance: 1.25
   collisionMoveInSmoothTime: 0.06

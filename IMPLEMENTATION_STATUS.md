@@ -5,6 +5,22 @@
 
 현재 체크아웃 기준의 구현 상태만 기록한다. 세부 설계나 작업 이력은 이 문서에 길게 누적하지 않는다.
 
+## 2026-07-20 Update
+
+- Combat tuning is separated into `CombatConfig` ScriptableObject data with `DefaultCombatConfig.asset` linked from scene and `NetPlayer` combat components.
+- Ball possession, dribble, shot, and physics tuning is separated into `BallConfig` ScriptableObject data with `DefaultBallConfig.asset` linked from scene/player ball components.
+- `Ball` now has an explicit `BallController` in the active scene instead of relying only on runtime attachment from `PlayerBallHandler`.
+- `PlayerBallHandler` remains the compatibility facade for `CurrentOwner`, `HasBall`, `Shoot`, `ForceRelease`, `ClearPossession`, `IsCharging`, and `ChargeAmount01`.
+- Player-specific initial acquisition, delayed reacquisition, release bookkeeping, and ownership cleanup now live in `BallPossessionController`; charge, shoot, dribble placement, and presentation remain in the facade.
+
+## 2026-07-19 Update
+
+- Keyboard movement now combines WASD and arrow keys into a single normalized `Vector2` before passing player intent to `CharacterLocomotion`.
+- Player movement responsibility is split across `CharacterMovementConfig`, `CharacterMovementUtility`, `CharacterLocomotion`, and `CharacterMotor`. `CharacterMotor` now applies resolved movement profiles to Rigidbody movement/rotation instead of owning input intent or profile selection.
+- Third-person camera yaw now prefers locomotion intent, uses quick-turn handling for side turns while leaving near-180 degree reversals on the normal rotation limit, and only applies ball-assist yaw while movement input is active.
+- Combat and charged shots now accept locked action directions from input time while preserving no-argument AI fallbacks.
+- `CameraViewSwitcher` now defers to `ThirdPersonActionCamera` when the action camera is enabled, preventing competing `LateUpdate` camera pose writes.
+
 ## 현재 요약
 
 - 로컬 3D 풋살 프로토타입이 구현되어 있다.
@@ -40,6 +56,11 @@
   - 스턴 중 이동 제한
   - 슬라이딩 dash 속도 적용
 
+- `Assets/_Game/Scripts/Runtime/Characters/Movement/`
+  - `CharacterMovementConfig` ScriptableObject balance data
+  - `CharacterLocomotion` movement intent, action direction, and profile selection
+  - `CharacterMovementUtility` pure movement/input direction calculations
+
 - `Assets/_Game/Scripts/Runtime/Characters/CharacterState.cs`
   - 캐릭터 상태 관리
 
@@ -49,20 +70,34 @@
 ### Ball and Combat
 
 - `Assets/_Game/Scripts/Runtime/Ball/PlayerBallHandler.cs`
-  - 공 소유, 드리블, 슛, 패스 처리
+  - Compatibility facade for ball ownership, dribble positioning, charge state, shooting, and forced release
+
+- `Assets/_Game/Scripts/Runtime/Ball/BallConfig.cs`
+  - ScriptableObject balance data for possession, dribble, shot, and ball physics tuning
+
+- `Assets/_Game/Scripts/Runtime/Ball/BallController.cs`
+  - Ball physics ownership, current owner, possession release, and free-ball restore
+
+- `Assets/_Game/Scripts/Runtime/Ball/BallPossessionController.cs`
+  - Player-specific acquisition, release delay, ownership release, and cleanup rules behind `PlayerBallHandler`
 
 - `Assets/_Game/Scripts/Runtime/Ball/BallImpactEffect.cs`
   - 공 충돌 이펙트 처리
 
 - `Assets/_Game/Scripts/Runtime/Combat/CombatController.cs`
-  - 펀치, 슬라이딩 태클, 쿨다운
-  - 히트 시 넉백, 스턴, 공 소유 해제, 이펙트/오디오 훅 호출
+  - Punch, tackle, cooldown, hit, knockback, ball release, and effects orchestration
+
+- `Assets/_Game/Scripts/Runtime/Combat/CombatConfig.cs`
+  - ScriptableObject balance data for punch, tackle, hit stun, knockback, and direction assist tuning
 
 ### Camera
 
 - `Assets/_Game/Scripts/Runtime/Camera/ThirdPersonActionCamera.cs`
-  - Futsal 전용 카메라 정책 owner
-  - 이동 방향 우선 yaw, 회전 deadzone/max speed, 약한 ball assist, FOV boost clamp, no-roll rig pose, capped shake 규칙 유지
+  - context 수집, CameraDirector 실행, plan 조립, backend 적용만 담당하는 thin orchestrator
+  - 이동 방향 우선 yaw, 회전 deadzone/max speed, 약한 ball assist, FOV boost clamp, no-roll rig pose, capped shake 규칙은 분리된 resolver가 유지
+
+- `Assets/_Game/Scripts/Runtime/Camera/Core/`, `Modes/`, `Resolvers/`, `Backends/`
+  - `CameraContext`/`CameraPlan` 데이터, default third-person mode, aim/position/FOV/effect resolver, Unity/Cinemachine 최종 적용 경계를 제공
 
 - `Assets/_Game/Scripts/Runtime/Camera/CinemachineActionCameraBackend.cs`
   - Cinemachine follow rig target, lens FOV, impulse 전달 adapter
@@ -100,7 +135,7 @@
 
 ## 최근 검증
 
-- EditMode: `7/7 passed`
+- EditMode: `32/32 passed` through Unity MCP on 2026-07-20.
 - PlayMode Test Runner: `FutsalGame` suite `Passed` 반환, summary count는 `0`
 - Play Mode smoke:
   - Cinemachine Brain active camera: `Futsal Cinemachine Third Person Camera`

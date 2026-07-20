@@ -28,7 +28,13 @@ public sealed class CinemachineActionCameraBackend : MonoBehaviour
 
     public bool HasFollowRigTarget => followRigTarget != null;
 
-    public void ApplyRigPose(ThirdPersonActionCamera.CameraRigPose pose)
+    public void Apply(CameraPlan plan)
+    {
+        ApplyRigPose(plan.FollowRigPose);
+        ApplyFieldOfView(plan.FieldOfView);
+    }
+
+    public void ApplyRigPose(CameraRigPose pose)
     {
         if (followRigTarget == null)
             return;

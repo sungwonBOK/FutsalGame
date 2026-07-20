@@ -12,6 +12,9 @@ using UnityEngine.InputSystem;
 /// </summary>
 public class CameraViewSwitcher : MonoBehaviour
 {
+    [Header("Compatibility")]
+    [SerializeField] private bool deferToActionCamera = true;
+
     [Tooltip("따라갈 대상. 비우면 이름이 'Player'인 오브젝트를 찾는다.")]
     [SerializeField] private Transform target;
 
@@ -34,6 +37,7 @@ public class CameraViewSwitcher : MonoBehaviour
     private Vector3 defaultPosition;
     private Quaternion defaultRotation;
     private bool thirdPerson;
+    private ThirdPersonActionCamera actionCamera;
 
     // 대상 yaw를 그대로 쓰지 않고 감쇠시킨 값. 카메라 배치의 기준이 된다.
     private float smoothedYaw;
@@ -46,6 +50,7 @@ public class CameraViewSwitcher : MonoBehaviour
     {
         defaultPosition = transform.position;
         defaultRotation = transform.rotation;
+        actionCamera = GetComponent<ThirdPersonActionCamera>();
 
         if (target == null)
         {
@@ -66,6 +71,9 @@ public class CameraViewSwitcher : MonoBehaviour
 
     private void LateUpdate()
     {
+        if (deferToActionCamera && actionCamera != null && actionCamera.enabled)
+            return;
+
         if (thirdPerson && target != null)
         {
             smoothedYaw = Mathf.SmoothDampAngle(smoothedYaw, target.eulerAngles.y, ref yawVelocity, yawSmoothTime);

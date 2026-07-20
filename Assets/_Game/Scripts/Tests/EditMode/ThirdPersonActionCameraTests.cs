@@ -4,6 +4,54 @@ using UnityEngine;
 public class ThirdPersonActionCameraTests
 {
     [Test]
+    public void ThirdPersonCameraMode_PrefersMoveIntentForItsDesiredYaw()
+    {
+        ThirdPersonActionCameraSettings settings = ScriptableObject.CreateInstance<ThirdPersonActionCameraSettings>();
+        try
+        {
+            CameraContext context = new CameraContext(
+                playerPosition: Vector3.zero,
+                velocity: Vector3.back * 10f,
+                hasMoveIntent: true,
+                moveIntent: Vector3.right,
+                actionIntent: Vector3.forward,
+                targetForward: Vector3.back,
+                hasBallTarget: false,
+                ballPosition: Vector3.zero,
+                currentYaw: 0f,
+                deltaTime: 0.1f);
+
+            CameraModeResult result = new ThirdPersonCameraMode().Resolve(context, settings);
+
+            Assert.That(Mathf.Abs(Mathf.DeltaAngle(90f, result.DesiredYaw)), Is.LessThan(0.001f));
+            Assert.That(result.LookPoint, Is.EqualTo(Vector3.up * settings.lookAtHeight));
+            Assert.That(result.BallHintRequired, Is.False);
+        }
+        finally
+        {
+            Object.DestroyImmediate(settings);
+        }
+    }
+
+    [Test]
+    public void CameraPlanBuilder_AssemblesResolvedPoseAndFovWithoutChangingThem()
+    {
+        CameraRigPose cameraPose = new CameraRigPose(
+            new Vector3(1f, 2f, 3f),
+            Quaternion.Euler(10f, 20f, 0f));
+        CameraRigPose followRigPose = new CameraRigPose(
+            new Vector3(4f, 5f, 6f),
+            Quaternion.Euler(0f, 30f, 0f));
+
+        CameraPlan plan = CameraPlanBuilder.Build(cameraPose, followRigPose, 88f);
+
+        Assert.That(plan.CameraPose.Position, Is.EqualTo(cameraPose.Position));
+        Assert.That(plan.CameraPose.Rotation, Is.EqualTo(cameraPose.Rotation));
+        Assert.That(plan.FollowRigPose.Position, Is.EqualTo(followRigPose.Position));
+        Assert.That(plan.FieldOfView, Is.EqualTo(88f));
+    }
+
+    [Test]
     public void UpdateYaw_InsideDeadZone_DoesNotRotate()
     {
         float velocity = 0f;
@@ -24,6 +72,46 @@ public class ThirdPersonActionCameraTests
     }
 
     [Test]
+    public void UpdateYaw_QuickTurnUsesFastRotationForSideTurn()
+    {
+        float velocity = 0f;
+
+        float yaw = ThirdPersonActionCamera.UpdateYaw(
+            currentYaw: 0f,
+            desiredYaw: 90f,
+            yawVelocity: ref velocity,
+            deltaTime: 0.1f,
+            deadZone: 0f,
+            smoothTime: 0.24f,
+            maxRotationSpeed: 90f,
+            quickTurnAngle: 75f,
+            quickTurnSmoothTime: 0.01f,
+            quickTurnMaxRotationSpeed: 720f);
+
+        Assert.That(Mathf.Abs(Mathf.DeltaAngle(0f, yaw)), Is.GreaterThan(9f));
+    }
+
+    [Test]
+    public void UpdateYaw_OppositeTurnUsesNormalRotationLimit()
+    {
+        float velocity = 0f;
+
+        float yaw = ThirdPersonActionCamera.UpdateYaw(
+            currentYaw: 0f,
+            desiredYaw: 180f,
+            yawVelocity: ref velocity,
+            deltaTime: 0.1f,
+            deadZone: 0f,
+            smoothTime: 0.24f,
+            maxRotationSpeed: 90f,
+            quickTurnAngle: 75f,
+            quickTurnSmoothTime: 0.01f,
+            quickTurnMaxRotationSpeed: 720f);
+
+        Assert.That(Mathf.Abs(Mathf.DeltaAngle(0f, yaw)), Is.LessThanOrEqualTo(9f + 0.001f));
+    }
+
+    [Test]
     public void ApplyBallAssist_DoesNotFlipWhenBallIsBehindPlayer()
     {
         float yaw = ThirdPersonActionCamera.ApplyBallAssistYaw(
@@ -35,6 +123,55 @@ public class ThirdPersonActionCameraTests
             strength: 0.25f);
 
         Assert.That(Mathf.Abs(Mathf.DeltaAngle(0f, yaw)), Is.LessThan(45f));
+    }
+
+    [Test]
+    public void ApplyBallAssist_WithNoActiveInputDoesNotChaseMovingBall()
+    {
+        float yaw = ThirdPersonActionCamera.ApplyBallAssistYaw(
+            currentYaw: 0f,
+            playerPosition: Vector3.zero,
+            ballPosition: Vector3.right * 10f,
+            edgeAngle: 10f,
+            maxAssistAngle: 120f,
+            strength: 1f,
+            hasActiveMoveInput: false,
+            activeMoveYaw: 0f,
+            maxActiveInputAssistAngle: 6f);
+
+        Assert.That(yaw, Is.EqualTo(0f).Within(0.001f));
+    }
+
+    [Test]
+    public void SelectHeading_PrefersMoveIntentOverVelocity()
+    {
+        Vector3 heading = ThirdPersonActionCamera.SelectHeading(
+            hasMoveIntent: true,
+            moveIntent: Vector3.right,
+            actionIntent: Vector3.forward,
+            velocity: Vector3.back * 10f,
+            targetForward: Vector3.back,
+            fallbackYaw: 180f,
+            movementPrioritySpeed: 0.5f);
+
+        Assert.That(heading, Is.EqualTo(Vector3.right));
+    }
+
+    [Test]
+    public void ApplyBallAssist_WithActiveInputCannotOpposeIntent()
+    {
+        float yaw = ThirdPersonActionCamera.ApplyBallAssistYaw(
+            currentYaw: 0f,
+            playerPosition: Vector3.zero,
+            ballPosition: Vector3.back * 10f,
+            edgeAngle: 10f,
+            maxAssistAngle: 179f,
+            strength: 1f,
+            hasActiveMoveInput: true,
+            activeMoveYaw: 0f,
+            maxActiveInputAssistAngle: 6f);
+
+        Assert.That(Mathf.Abs(Mathf.DeltaAngle(0f, yaw)), Is.LessThanOrEqualTo(6f + 0.001f));
     }
 
     [Test]
@@ -62,7 +199,7 @@ public class ThirdPersonActionCameraTests
     [Test]
     public void BuildFollowRigPose_UsesLookPointHeightAndYawOnly()
     {
-        ThirdPersonActionCamera.CameraRigPose pose = ThirdPersonActionCamera.BuildFollowRigPose(
+        CameraRigPose pose = ThirdPersonActionCamera.BuildFollowRigPose(
             playerPosition: new Vector3(1f, 0f, 2f),
             yaw: 35f,
             lookAtHeight: 1.7f);
@@ -84,7 +221,7 @@ public class ThirdPersonActionCameraTests
             CinemachineActionCameraBackend backend = backendObject.AddComponent<CinemachineActionCameraBackend>();
             backend.FollowRigTarget = followTargetObject.transform;
 
-            backend.ApplyRigPose(new ThirdPersonActionCamera.CameraRigPose(
+            backend.ApplyRigPose(new CameraRigPose(
                 new Vector3(2f, 1.5f, -3f),
                 Quaternion.Euler(0f, 70f, 0f)));
 

@@ -785,6 +785,7 @@ GameObject:
   - component: {fileID: 6475598841151586546}
   - component: {fileID: 8454980551100531994}
   - component: {fileID: 9066333100707334323}
+  - component: {fileID: 4199211009935589782}
   m_Layer: 0
   m_Name: NetPlayer
   m_TagString: Untagged
@@ -928,14 +929,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerBallHandler
   ballRb: {fileID: 0}
-  possessRange: 1.2
-  dribbleOffset: {x: 0, y: -0.6, z: 0.9}
+  config: {fileID: 11400000, guid: 83c6cd703aa5db44ebcdf7e7dfd45bd2, type: 2}
   startWithBall: 0
-  shootForce: 6
-  shootCooldown: 0.4
-  passForce: 3.5
-  maxShootForce: 13
-  maxChargeTime: 1
   shootEffectPrefab: {fileID: 5735483636665671060, guid: de74db7970c212c409a892336f311204, type: 3}
 --- !u!114 &66404090215725709
 MonoBehaviour:
@@ -975,16 +970,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4b5d736e114d31641bc3264bcef08366, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CombatController
-  punchRange: 1.3
-  punchRadius: 0.7
-  punchCooldown: 1.2
-  slideSpeed: 12
-  slideDuration: 0.35
-  slideCooldown: 3
-  slideHitRadius: 0.8
-  knockbackForce: 8
-  stunDuration: 1
-  ballKnockForce: 6
+  config: {fileID: 11400000, guid: 90b7654138a82d749b854cfd3c73fbb3, type: 2}
   hitEffectPrefab: {fileID: 8597426470300953358, guid: 889b0f88119620540a006ee052144ece, type: 3}
   slideDustPrefab: {fileID: 2833036980343921197, guid: 5f262dc9784432c43acd88fd070d8763, type: 3}
 --- !u!114 &814188318427965981
@@ -999,6 +985,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2d5a59d0eb4a035489856be869465b84, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerInput
+  movementReference: {fileID: 0}
 --- !u!114 &8936948511407146191
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1025,7 +1012,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2523481466
+  GlobalObjectIdHash: 994264563
   InScenePlacedSourceGlobalObjectIdHash: 0
   DeferredDespawnTick: 0
   Ownership: 1
@@ -1102,6 +1089,19 @@ MonoBehaviour:
   UseRigidBodyForMotion: 0
   AutoUpdateKinematicState: 1
   AutoSetKinematicOnDespawn: 1
+--- !u!114 &4199211009935589782
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3329367792369302264}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 10d21b299ee07a246b29073d7504a7b8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: FutsalGame.Runtime::CharacterLocomotion
+  config: {fileID: 11400000, guid: 34187b9fa43dc4a47b8057c92243fcc2, type: 2}
 --- !u!1 &3392525434865351877
 GameObject:
   m_ObjectHideFlags: 0

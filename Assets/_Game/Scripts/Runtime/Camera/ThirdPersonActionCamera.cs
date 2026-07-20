@@ -4,21 +4,10 @@ using UnityEngine;
 [RequireComponent(typeof(Camera))]
 public class ThirdPersonActionCamera : MonoBehaviour
 {
-    public readonly struct CameraRigPose
-    {
-        public CameraRigPose(Vector3 position, Quaternion rotation)
-        {
-            Position = position;
-            Rotation = rotation;
-        }
-
-        public Vector3 Position { get; }
-        public Quaternion Rotation { get; }
-    }
-
     [Header("Targets")]
     [SerializeField] private Transform playerTarget;
     [SerializeField] private Rigidbody playerRigidbody;
+    [SerializeField] private CharacterLocomotion playerLocomotion;
     [SerializeField] private Transform ballTarget;
 
     [Header("Settings")]
@@ -28,21 +17,17 @@ public class ThirdPersonActionCamera : MonoBehaviour
     [SerializeField] private bool useCinemachineBackend;
     [SerializeField] private CinemachineActionCameraBackend cinemachineBackend;
 
-    private Camera controlledCamera;
-    private Vector3 positionVelocity;
-    private float yawVelocity;
+    private CameraContextProvider contextProvider;
+    private CameraDirector cameraDirector;
+    private AimResolver aimResolver;
+    private PositionResolver positionResolver;
+    private FovResolver fovResolver;
+    private EffectResolver effectResolver;
+    private CameraBackend cameraBackend;
     private float currentYaw;
-    private float currentDistance;
-    private float distanceVelocity;
-    private float fovVelocity;
-    private float shakeAmount;
-    private float shakeTimeRemaining;
+    private float yawVelocity;
 
     public bool BallHintRequired { get; private set; }
-
-    private bool HasCinemachineBackend => useCinemachineBackend
-        && cinemachineBackend != null
-        && cinemachineBackend.HasFollowRigTarget;
 
     private ThirdPersonActionCameraSettings Settings
     {
@@ -56,92 +41,47 @@ public class ThirdPersonActionCamera : MonoBehaviour
 
     private void Awake()
     {
-        controlledCamera = GetComponent<Camera>();
+        Camera controlledCamera = GetComponent<Camera>();
         if (cinemachineBackend == null)
             cinemachineBackend = GetComponent<CinemachineActionCameraBackend>();
 
-        if (playerTarget == null)
-        {
-            GameObject player = GameObject.Find("Player");
-            if (player != null)
-                playerTarget = player.transform;
-        }
-
-        if (ballTarget == null)
-        {
-            GameObject ball = GameObject.Find("Ball");
-            if (ball != null)
-                ballTarget = ball.transform;
-        }
-
-        if (playerRigidbody == null && playerTarget != null)
-            playerRigidbody = playerTarget.GetComponent<Rigidbody>();
+        contextProvider = new CameraContextProvider(playerTarget, playerRigidbody, playerLocomotion, ballTarget, transform);
+        contextProvider.ResolveMissingTargets();
+        cameraDirector = new CameraDirector();
+        aimResolver = new AimResolver();
+        positionResolver = new PositionResolver();
+        fovResolver = new FovResolver();
+        effectResolver = new EffectResolver();
+        cameraBackend = new CameraBackend(controlledCamera, transform, useCinemachineBackend, cinemachineBackend);
 
         currentYaw = transform.eulerAngles.y;
-        currentDistance = Settings.distance;
-        if (controlledCamera != null)
-            controlledCamera.fieldOfView = Settings.baseFov;
-        if (cinemachineBackend != null)
-            cinemachineBackend.ApplyFieldOfView(Settings.baseFov);
+        positionResolver.Initialize(Settings.distance);
+        cameraBackend.ApplyInitialFieldOfView(Settings.baseFov);
     }
 
     private void LateUpdate()
     {
-        if (playerTarget == null)
+        if (!contextProvider.TryGet(currentYaw, Time.deltaTime, out CameraContext context))
             return;
 
-        ThirdPersonActionCameraSettings s = Settings;
-        float dt = Mathf.Max(Time.deltaTime, 0.0001f);
-        Vector3 playerPosition = playerTarget.position;
-        Vector3 velocity = playerRigidbody != null ? playerRigidbody.linearVelocity : Vector3.zero;
-        Vector3 heading = SelectHeading(playerTarget.forward, velocity, currentYaw, s.movementPrioritySpeed);
-        float desiredYaw = DirectionToYaw(heading);
+        ThirdPersonActionCameraSettings currentSettings = Settings;
+        CameraModeResult modeResult = cameraDirector.Resolve(context, currentSettings);
+        BallHintRequired = modeResult.BallHintRequired;
+        currentYaw = aimResolver.UpdateYaw(currentYaw, modeResult.DesiredYaw, ref yawVelocity, context.DeltaTime, currentSettings);
 
-        desiredYaw = ApplyBallAssistYaw(
-            desiredYaw,
-            playerPosition,
-            ballTarget != null ? ballTarget.position : playerPosition,
-            s.ballAssistEdgeAngle,
-            s.ballAssistMaxAngle,
-            s.ballAssistStrength);
-
-        BallHintRequired = ballTarget != null && BallNeedsHint(desiredYaw, playerPosition, ballTarget.position, s.ballAssistMaxAngle);
-        currentYaw = UpdateYaw(currentYaw, desiredYaw, ref yawVelocity, dt, s.rotationDeadZone, s.rotationSmoothTime, s.maxRotationSpeed);
-
-        Vector3 lookPoint = playerPosition + Vector3.up * s.lookAtHeight;
-        bool hasCinemachineBackend = HasCinemachineBackend;
-
-        if (hasCinemachineBackend)
-        {
-            cinemachineBackend.ApplyRigPose(BuildFollowRigPose(playerPosition, currentYaw, s.lookAtHeight));
-        }
-        else
-        {
-            float desiredDistance = ResolveCollisionDistance(lookPoint, currentYaw, s);
-            float distanceSmoothTime = desiredDistance < currentDistance ? s.collisionMoveInSmoothTime : s.collisionReturnSmoothTime;
-            currentDistance = Mathf.SmoothDamp(currentDistance, desiredDistance, ref distanceVelocity, distanceSmoothTime, Mathf.Infinity, dt);
-
-            Vector3 desiredPosition = BuildCameraPosition(lookPoint, currentYaw, currentDistance, s.height);
-            desiredPosition = Vector3.SmoothDamp(transform.position, desiredPosition, ref positionVelocity, s.positionSmoothTime, Mathf.Infinity, dt);
-
-            Quaternion desiredRotation = BuildStableLookRotation(desiredPosition, lookPoint);
-            ApplyShake(ref desiredRotation, ref desiredPosition, dt, s);
-
-            transform.SetPositionAndRotation(desiredPosition, desiredRotation);
-        }
-
-        float speed = new Vector3(velocity.x, 0f, velocity.z).magnitude;
-        float targetFov = CalculateTargetFov(s.baseFov, speed, s.sprintSpeed, s.sprintFovBoost);
-        float currentFov = controlledCamera != null ? controlledCamera.fieldOfView : s.baseFov;
-        float smoothedFov = Mathf.SmoothDamp(currentFov, targetFov, ref fovVelocity, s.fovSmoothTime, Mathf.Infinity, dt);
-        if (hasCinemachineBackend)
-        {
-            cinemachineBackend.ApplyFieldOfView(smoothedFov);
-        }
-        else if (controlledCamera != null)
-        {
-            controlledCamera.fieldOfView = smoothedFov;
-        }
+        CameraPositionResult positionResult = positionResolver.Resolve(
+            modeResult,
+            currentYaw,
+            context,
+            currentSettings,
+            cameraBackend.UsesCinemachineBackend);
+        CameraRigPose cameraPose = effectResolver.Resolve(
+            positionResult.CameraPose,
+            context,
+            currentSettings,
+            !cameraBackend.UsesCinemachineBackend);
+        float fieldOfView = fovResolver.Resolve(cameraBackend.CurrentFieldOfView(currentSettings.baseFov), context, currentSettings);
+        cameraBackend.Apply(CameraPlanBuilder.Build(cameraPose, positionResult.FollowRigPose, fieldOfView));
     }
 
     public void SetTargets(Transform player, Rigidbody playerBody, Transform ball)
@@ -149,17 +89,13 @@ public class ThirdPersonActionCamera : MonoBehaviour
         playerTarget = player;
         playerRigidbody = playerBody;
         ballTarget = ball;
+        contextProvider.SetTargets(player, playerBody, ball);
     }
 
     public void AddShake(float strength)
     {
-        ThirdPersonActionCameraSettings s = Settings;
-        float targetShake = Mathf.Clamp01(strength * s.shakeStrength);
-        if (HasCinemachineBackend)
-            cinemachineBackend.PlayImpulse(targetShake);
-
-        shakeAmount = Mathf.Clamp01(Mathf.Max(shakeAmount, targetShake));
-        shakeTimeRemaining = Mathf.Max(shakeTimeRemaining, 0.12f);
+        effectResolver.AddShake(strength, Settings);
+        cameraBackend.PlayImpulse(Mathf.Clamp01(strength * Settings.shakeStrength));
     }
 
     public void PlayShootShake()
@@ -172,152 +108,43 @@ public class ThirdPersonActionCamera : MonoBehaviour
         AddShake(0.85f);
     }
 
-    public static float UpdateYaw(
-        float currentYaw,
-        float desiredYaw,
-        ref float yawVelocity,
-        float deltaTime,
-        float deadZone,
-        float smoothTime,
-        float maxRotationSpeed)
+    public static float UpdateYaw(float currentYaw, float desiredYaw, ref float yawVelocity, float deltaTime, float deadZone, float smoothTime, float maxRotationSpeed)
     {
-        float delta = Mathf.DeltaAngle(currentYaw, desiredYaw);
-        if (Mathf.Abs(delta) <= deadZone)
-        {
-            yawVelocity = 0f;
-            return currentYaw;
-        }
-
-        float adjustedTarget = currentYaw + Mathf.Sign(delta) * (Mathf.Abs(delta) - deadZone);
-        float smoothed = Mathf.SmoothDampAngle(
-            currentYaw,
-            adjustedTarget,
-            ref yawVelocity,
-            Mathf.Max(0.0001f, smoothTime),
-            Mathf.Max(1f, maxRotationSpeed),
-            Mathf.Max(0.0001f, deltaTime));
-
-        return Mathf.MoveTowardsAngle(currentYaw, smoothed, maxRotationSpeed * deltaTime);
+        return AimResolver.UpdateYaw(currentYaw, desiredYaw, ref yawVelocity, deltaTime, deadZone, smoothTime, maxRotationSpeed, float.PositiveInfinity, smoothTime, maxRotationSpeed);
     }
 
-    public static float ApplyBallAssistYaw(
-        float currentYaw,
-        Vector3 playerPosition,
-        Vector3 ballPosition,
-        float edgeAngle,
-        float maxAssistAngle,
-        float strength)
+    public static float UpdateYaw(float currentYaw, float desiredYaw, ref float yawVelocity, float deltaTime, float deadZone, float smoothTime, float maxRotationSpeed, float quickTurnAngle, float quickTurnSmoothTime, float quickTurnMaxRotationSpeed)
     {
-        Vector3 toBall = ballPosition - playerPosition;
-        toBall.y = 0f;
-        if (toBall.sqrMagnitude < 0.0001f || strength <= 0f)
-            return currentYaw;
+        return AimResolver.UpdateYaw(currentYaw, desiredYaw, ref yawVelocity, deltaTime, deadZone, smoothTime, maxRotationSpeed, quickTurnAngle, quickTurnSmoothTime, quickTurnMaxRotationSpeed);
+    }
 
-        float ballYaw = DirectionToYaw(toBall);
-        float delta = Mathf.DeltaAngle(currentYaw, ballYaw);
-        float absDelta = Mathf.Abs(delta);
+    public static float ApplyBallAssistYaw(float currentYaw, Vector3 playerPosition, Vector3 ballPosition, float edgeAngle, float maxAssistAngle, float strength)
+    {
+        return AimResolver.ApplyBallAssistYaw(currentYaw, playerPosition, ballPosition, edgeAngle, maxAssistAngle, strength, false, currentYaw, 0f);
+    }
 
-        if (absDelta <= edgeAngle || absDelta >= maxAssistAngle)
-            return currentYaw;
-
-        float edge01 = Mathf.InverseLerp(edgeAngle, maxAssistAngle, absDelta);
-        return Mathf.LerpAngle(currentYaw, ballYaw, Mathf.Clamp01(strength) * edge01);
+    public static float ApplyBallAssistYaw(float currentYaw, Vector3 playerPosition, Vector3 ballPosition, float edgeAngle, float maxAssistAngle, float strength, bool hasActiveMoveInput, float activeMoveYaw, float maxActiveInputAssistAngle)
+    {
+        return AimResolver.ApplyBallAssistYaw(currentYaw, playerPosition, ballPosition, edgeAngle, maxAssistAngle, strength, hasActiveMoveInput, activeMoveYaw, maxActiveInputAssistAngle);
     }
 
     public static float CalculateTargetFov(float baseFov, float speed, float sprintSpeed, float sprintFovBoost)
     {
-        float speed01 = Mathf.Clamp01(speed / Mathf.Max(0.0001f, sprintSpeed));
-        return baseFov + Mathf.Clamp(sprintFovBoost, 0f, 5f) * speed01;
+        return FovResolver.CalculateTargetFov(baseFov, speed, sprintSpeed, sprintFovBoost);
     }
 
     public static Quaternion BuildStableLookRotation(Vector3 cameraPosition, Vector3 lookPoint)
     {
-        Vector3 lookDirection = lookPoint - cameraPosition;
-        if (lookDirection.sqrMagnitude < 0.0001f)
-            lookDirection = Vector3.forward;
-
-        Quaternion rotation = Quaternion.LookRotation(lookDirection.normalized, Vector3.up);
-        Vector3 euler = rotation.eulerAngles;
-        euler.z = 0f;
-        return Quaternion.Euler(euler);
+        return PositionResolver.BuildStableLookRotation(cameraPosition, lookPoint);
     }
 
     public static CameraRigPose BuildFollowRigPose(Vector3 playerPosition, float yaw, float lookAtHeight)
     {
-        Vector3 lookPoint = playerPosition + Vector3.up * lookAtHeight;
-        Quaternion yawOnlyRotation = Quaternion.Euler(0f, yaw, 0f);
-        return new CameraRigPose(lookPoint, yawOnlyRotation);
+        return PositionResolver.BuildFollowRigPose(playerPosition, yaw, lookAtHeight);
     }
 
-    private static Vector3 SelectHeading(Vector3 targetForward, Vector3 velocity, float fallbackYaw, float movementPrioritySpeed)
+    public static Vector3 SelectHeading(bool hasMoveIntent, Vector3 moveIntent, Vector3 actionIntent, Vector3 velocity, Vector3 targetForward, float fallbackYaw, float movementPrioritySpeed)
     {
-        Vector3 flatVelocity = new Vector3(velocity.x, 0f, velocity.z);
-        if (flatVelocity.magnitude >= movementPrioritySpeed)
-            return flatVelocity.normalized;
-
-        Vector3 flatForward = new Vector3(targetForward.x, 0f, targetForward.z);
-        if (flatForward.sqrMagnitude > 0.0001f)
-            return flatForward.normalized;
-
-        return Quaternion.Euler(0f, fallbackYaw, 0f) * Vector3.forward;
-    }
-
-    private static Vector3 BuildCameraPosition(Vector3 lookPoint, float yaw, float distance, float height)
-    {
-        Vector3 forward = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
-        return lookPoint - forward * distance + Vector3.up * height;
-    }
-
-    private static float DirectionToYaw(Vector3 direction)
-    {
-        direction.y = 0f;
-        if (direction.sqrMagnitude < 0.0001f)
-            return 0f;
-        return Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg;
-    }
-
-    private static bool BallNeedsHint(float yaw, Vector3 playerPosition, Vector3 ballPosition, float maxAssistAngle)
-    {
-        Vector3 toBall = ballPosition - playerPosition;
-        toBall.y = 0f;
-        if (toBall.sqrMagnitude < 0.0001f)
-            return false;
-
-        return Mathf.Abs(Mathf.DeltaAngle(yaw, DirectionToYaw(toBall))) >= maxAssistAngle;
-    }
-
-    private float ResolveCollisionDistance(Vector3 lookPoint, float yaw, ThirdPersonActionCameraSettings s)
-    {
-        Vector3 desiredPosition = BuildCameraPosition(lookPoint, yaw, s.distance, s.height);
-        Vector3 toCamera = desiredPosition - lookPoint;
-        float desiredDistance = toCamera.magnitude;
-        if (desiredDistance <= 0.0001f)
-            return s.minCollisionDistance;
-
-        Vector3 direction = toCamera / desiredDistance;
-        if (Physics.SphereCast(lookPoint, s.collisionRadius, direction, out RaycastHit hit, desiredDistance, s.collisionMask, QueryTriggerInteraction.Ignore))
-            return Mathf.Max(s.minCollisionDistance, hit.distance - s.collisionRadius);
-
-        return s.distance;
-    }
-
-    private void ApplyShake(ref Quaternion rotation, ref Vector3 position, float deltaTime, ThirdPersonActionCameraSettings s)
-    {
-        if (shakeTimeRemaining <= 0f || shakeAmount <= 0f)
-            return;
-
-        shakeTimeRemaining -= deltaTime;
-        float seed = Time.time * s.shakeFrequency;
-        float offsetX = (Mathf.PerlinNoise(seed, 0.17f) - 0.5f) * 2f;
-        float offsetY = (Mathf.PerlinNoise(0.83f, seed) - 0.5f) * 2f;
-        float yawKick = (Mathf.PerlinNoise(seed, seed) - 0.5f) * 2f;
-
-        position += transform.right * (offsetX * s.maxShakeOffset * shakeAmount);
-        position += Vector3.up * (offsetY * s.maxShakeOffset * shakeAmount);
-        rotation = Quaternion.AngleAxis(yawKick * s.maxShakeAngle * shakeAmount, Vector3.up) * rotation;
-
-        shakeAmount = Mathf.MoveTowards(shakeAmount, 0f, s.shakeDecay * deltaTime);
-        if (shakeTimeRemaining <= 0f)
-            shakeAmount = 0f;
+        return AimResolver.SelectHeading(hasMoveIntent, moveIntent, actionIntent, velocity, targetForward, fallbackYaw, movementPrioritySpeed);
     }
 }
