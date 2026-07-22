@@ -49,11 +49,14 @@ public class BallConfig : ScriptableObject
     [Serializable]
     public struct PassSettings
     {
-        [Min(0f)] public float force;
+        [FormerlySerializedAs("force")]
+        [Min(0f)] public float minChargeForce;
+        [Min(0f)] public float maxChargeForce;
 
-        public PassSettings(float force)
+        public PassSettings(float minChargeForce, float maxChargeForce)
         {
-            this.force = force;
+            this.minChargeForce = minChargeForce;
+            this.maxChargeForce = maxChargeForce;
         }
     }
 
@@ -97,7 +100,7 @@ public class BallConfig : ScriptableObject
     public DribbleSettings Dribble = new DribbleSettings(new Vector3(0f, -0.6f, 0.9f), 0f, 0f, 0.5f, 3.5f);
 
     [Header("Pass")]
-    public PassSettings Pass = new PassSettings(3.5f);
+    public PassSettings Pass = new PassSettings(3.5f, 7f);
 
     [Header("Shot")]
     public ShotSettings Shot = new ShotSettings(3.5f, 6f, 13f, 1f, 0.4f);

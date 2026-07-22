@@ -24,7 +24,8 @@ MonoBehaviour:
     sprintTouchInterval: 0.5
     sprintTouchForce: 3.5
   Pass:
-    force: 3.5
+    minChargeForce: 3.5
+    maxChargeForce: 7
   Shot:
     minChargeForce: 3.5
     shootForce: 6

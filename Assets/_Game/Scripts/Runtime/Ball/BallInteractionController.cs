@@ -1,5 +1,12 @@
 using UnityEngine;
 
+public enum BallChargeAction
+{
+    None,
+    Pass,
+    Shot
+}
+
 public sealed class BallInteractionController
 {
     private readonly BallPossessionController possession;
@@ -9,11 +16,10 @@ public sealed class BallInteractionController
     private Vector3 sprintActionDirection = Vector3.forward;
     private float sprintTouchStartedAt = -1f;
 
-    private bool isCharging;
+    private BallChargeAction activeChargeAction;
     private float chargeStartedAt;
-    private Vector3 chargeDirection = Vector3.forward;
 
-    public bool IsCharging => isCharging;
+    public bool IsCharging => activeChargeAction != BallChargeAction.None;
 
     public BallInteractionController(BallPossessionController possession, BallConfig config)
     {
@@ -23,7 +29,7 @@ public sealed class BallInteractionController
 
     public float ChargeAmount01(float now)
     {
-        if (!isCharging)
+        if (!IsCharging)
             return 0f;
 
         return Mathf.Clamp01((now - chargeStartedAt) / Mathf.Max(0.0001f, config.Shot.maxChargeTime));
@@ -48,7 +54,7 @@ public sealed class BallInteractionController
             return false;
         }
 
-        if (isCharging)
+        if (IsCharging)
         {
             sprintTouchStartedAt = -1f;
             return false;
@@ -77,36 +83,50 @@ public sealed class BallInteractionController
     public bool TryPass(float now, Vector3 actionDirection, Vector3 fallbackForward, out Vector3 impulse)
     {
         CancelAll();
-        impulse = CaptureDirection(actionDirection, fallbackForward) * config.Pass.force;
+        impulse = CaptureDirection(actionDirection, fallbackForward) * config.Pass.minChargeForce;
         return possession.Release(now, impulse);
     }
 
     public bool StartCharge(float now, Vector3 actionDirection, Vector3 fallbackForward)
     {
-        if (!possession.HasBall || isCharging)
+        return TryStartCharge(now, BallChargeAction.Shot);
+    }
+
+    public bool TryStartCharge(float now, BallChargeAction action)
+    {
+        if (!possession.HasBall || IsCharging || action == BallChargeAction.None)
             return false;
 
         sprintTouchStartedAt = -1f;
-        isCharging = true;
+        activeChargeAction = action;
         chargeStartedAt = now;
-        chargeDirection = CaptureDirection(actionDirection, fallbackForward);
         return true;
     }
 
     public bool TryReleaseCharge(float now, Vector3 fallbackForward, out Vector3 impulse)
     {
+        return TryReleaseCharge(now, BallChargeAction.Shot, fallbackForward, fallbackForward, out impulse);
+    }
+
+    public bool TryReleaseCharge(
+        float now,
+        BallChargeAction action,
+        Vector3 releaseDirection,
+        Vector3 fallbackForward,
+        out Vector3 impulse)
+    {
         impulse = Vector3.zero;
-        if (!isCharging)
+        if (!IsCharging || activeChargeAction != action)
             return false;
 
         float chargeAmount = ChargeAmount01(now);
-        Vector3 direction = CaptureDirection(chargeDirection, fallbackForward);
-        isCharging = false;
+        Vector3 direction = CaptureDirection(releaseDirection, fallbackForward);
+        activeChargeAction = BallChargeAction.None;
 
         if (!possession.HasBall)
             return false;
 
-        impulse = direction * Mathf.Lerp(config.Shot.minChargeForce, config.Shot.maxShootForce, chargeAmount);
+        impulse = direction * ResolveChargeForce(action, chargeAmount);
         return possession.Release(now, impulse);
     }
 
@@ -114,12 +134,12 @@ public sealed class BallInteractionController
     {
         sprintHeld = false;
         sprintTouchStartedAt = -1f;
-        isCharging = false;
+        activeChargeAction = BallChargeAction.None;
     }
 
     public void CancelCharge()
     {
-        isCharging = false;
+        activeChargeAction = BallChargeAction.None;
     }
 
     public static Vector3 CaptureDirection(Vector3 actionDirection, Vector3 fallbackForward)
@@ -130,5 +150,12 @@ public sealed class BallInteractionController
 
         captured = CharacterMovementUtility.NormalizePlanar(fallbackForward);
         return captured.sqrMagnitude > 0.0001f ? captured : Vector3.forward;
+    }
+
+    private float ResolveChargeForce(BallChargeAction action, float chargeAmount)
+    {
+        return action == BallChargeAction.Pass
+            ? Mathf.Lerp(config.Pass.minChargeForce, config.Pass.maxChargeForce, chargeAmount)
+            : Mathf.Lerp(config.Shot.minChargeForce, config.Shot.maxShootForce, chargeAmount);
     }
 }
