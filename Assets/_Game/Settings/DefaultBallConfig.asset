@@ -21,8 +21,12 @@ MonoBehaviour:
     offset: {x: 0, y: -0.6, z: 0.9}
     followSharpness: 0
     detachImpulse: 0
+    sprintTouchInterval: 0.5
+    sprintTouchForce: 3.5
+  Pass:
+    force: 3.5
   Shot:
-    passForce: 3.5
+    minChargeForce: 3.5
     shootForce: 6
     maxShootForce: 13
     maxChargeTime: 1

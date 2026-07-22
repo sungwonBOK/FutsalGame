@@ -33,6 +33,8 @@ public class PlayerInput : MonoBehaviour
         if (!GameManager.PlayActive || (state != null && state.IsStunned))
         {
             locomotion.SetPlayerMoveInput(Vector2.zero, sprint: false, hasBall: ball != null && ball.HasBall);
+            if (ball != null)
+                ball.SetSprintDribbleInput(false, Vector3.zero);
             return;
         }
 
@@ -55,6 +57,9 @@ public class PlayerInput : MonoBehaviour
 
         if (ball != null)
         {
+            ball.SetSprintDribbleInput(sprint, actionDirection);
+            if (kb.fKey.wasPressedThisFrame)
+                ball.Pass(actionDirection);
             if (kb.spaceKey.wasPressedThisFrame)
                 ball.StartCharge(actionDirection);
             if (kb.spaceKey.wasReleasedThisFrame)

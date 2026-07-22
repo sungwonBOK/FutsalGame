@@ -21,16 +21,12 @@ public class PlayerBallHandler : MonoBehaviour
     private ThirdPersonActionCamera actionCamera;
     private BallController ball;
     private BallPossessionController possession;
+    private BallInteractionController interaction;
     private BallConfig runtimeConfig;
 
-    private bool isCharging;
-    private float chargeStartTime;
-    private Vector3 chargeShotDirection = Vector3.forward;
-
     public bool HasBall => possession != null && possession.HasBall;
-    public bool IsCharging => isCharging;
-    public float ChargeAmount01 =>
-        isCharging ? Mathf.Clamp01((Time.time - chargeStartTime) / Mathf.Max(0.0001f, Config.Shot.maxChargeTime)) : 0f;
+    public bool IsCharging => interaction != null && interaction.IsCharging;
+    public float ChargeAmount01 => interaction != null ? interaction.ChargeAmount01(Time.time) : 0f;
 
     private BallConfig Config
     {
@@ -57,6 +53,7 @@ public class PlayerBallHandler : MonoBehaviour
 
         ball = ResolveBallController();
         possession = new BallPossessionController(this, ball, Config);
+        interaction = new BallInteractionController(possession, Config);
 
         if (ball == null)
             Debug.LogWarning("[PlayerBallHandler] Ball Rigidbody is not assigned.", this);
@@ -72,10 +69,11 @@ public class PlayerBallHandler : MonoBehaviour
         if (ball == null)
             return;
 
-        if (isCharging && (!HasBall || !GameManager.PlayActive || (state != null && state.IsStunned)))
-            CancelCharge();
+        bool canInteract = GameManager.PlayActive && (state == null || !state.IsStunned);
+        Vector3 sprintTouchImpulse;
+        interaction.TryTick(Time.time, canInteract, transform.forward, out sprintTouchImpulse);
 
-        if (!GameManager.PlayActive || (state != null && state.IsStunned))
+        if (!canInteract)
             return;
 
         possession.TryAcquire(Time.time, true);
@@ -97,6 +95,7 @@ public class PlayerBallHandler : MonoBehaviour
         if (!HasBall)
             return;
 
+        interaction.CancelAll();
         FireShot(Config.Shot.shootForce, CaptureShotDirection(actionDirection, transform.forward));
     }
 
@@ -107,54 +106,53 @@ public class PlayerBallHandler : MonoBehaviour
 
     public void StartCharge(Vector3 actionDirection)
     {
-        if (!HasBall || isCharging)
-            return;
-
-        isCharging = true;
-        chargeStartTime = Time.time;
-        chargeShotDirection = CaptureShotDirection(actionDirection, transform.forward);
+        interaction.StartCharge(Time.time, actionDirection, transform.forward);
     }
 
     public void ReleaseCharge()
     {
-        if (!isCharging)
-            return;
-
-        float chargeAmount = ChargeAmount01;
-        Vector3 lockedDirection = chargeShotDirection;
-        isCharging = false;
-
-        if (!HasBall)
-            return;
-
-        BallConfig.ShotSettings shot = Config.Shot;
-        FireShot(Mathf.Lerp(shot.passForce, shot.maxShootForce, chargeAmount), lockedDirection);
+        Vector3 impulse;
+        if (interaction.TryReleaseCharge(Time.time, transform.forward, out impulse))
+            PlayShotPresentation(CaptureShotDirection(impulse, transform.forward));
     }
 
     public void CancelCharge()
     {
-        isCharging = false;
+        if (interaction != null)
+            interaction.CancelCharge();
+    }
+
+    public void SetSprintDribbleInput(bool held, Vector3 actionDirection)
+    {
+        if (interaction != null)
+            interaction.SetSprintInput(held, actionDirection);
+    }
+
+    public void Pass(Vector3 actionDirection)
+    {
+        if (interaction == null)
+            return;
+
+        Vector3 impulse;
+        interaction.TryPass(Time.time, actionDirection, transform.forward, out impulse);
     }
 
     public void ForceRelease(Vector3 impulse)
     {
-        CancelCharge();
+        if (interaction != null)
+            interaction.CancelAll();
         ReleaseWithImpulse(impulse);
     }
 
     public static Vector3 CaptureShotDirection(Vector3 actionDirection, Vector3 fallbackForward)
     {
-        Vector3 captured = CharacterMovementUtility.NormalizePlanar(actionDirection);
-        if (captured.sqrMagnitude > 0.0001f)
-            return captured;
-
-        captured = CharacterMovementUtility.NormalizePlanar(fallbackForward);
-        return captured.sqrMagnitude > 0.0001f ? captured : Vector3.forward;
+        return BallInteractionController.CaptureDirection(actionDirection, fallbackForward);
     }
 
     private void OnDisable()
     {
-        CancelCharge();
+        if (interaction != null)
+            interaction.CancelAll();
         possession.ClearIfOwner();
     }
 
@@ -193,6 +191,13 @@ public class PlayerBallHandler : MonoBehaviour
     {
         if (!HasBall)
             return;
+
+        PlayShotPresentation(direction);
+        ReleaseWithImpulse(direction * force);
+    }
+
+    private void PlayShotPresentation(Vector3 direction)
+    {
         if (anim != null)
             anim.PlayShoot();
 
@@ -202,8 +207,6 @@ public class PlayerBallHandler : MonoBehaviour
             AudioManager.Instance.PlayShoot();
         if (actionCamera != null)
             actionCamera.PlayShootShake();
-
-        ReleaseWithImpulse(direction * force);
     }
 
     private void ReleaseWithImpulse(Vector3 impulse)
