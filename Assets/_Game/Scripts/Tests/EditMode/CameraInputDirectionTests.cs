@@ -53,6 +53,26 @@ public class CameraInputDirectionTests
     }
 
     [Test]
+    public void BuildPlanarCameraForward_UsesCameraHeadingWithoutVerticalPitch()
+    {
+        GameObject reference = new GameObject("Camera Reference");
+
+        try
+        {
+            reference.transform.rotation = Quaternion.Euler(45f, 90f, 0f);
+
+            Vector3 direction = PlayerInput.BuildPlanarCameraForward(reference.transform, Vector3.forward);
+
+            Assert.That(direction.y, Is.EqualTo(0f).Within(0.001f));
+            Assert.That(Vector3.Dot(direction, Vector3.right), Is.EqualTo(1f).Within(0.001f));
+        }
+        finally
+        {
+            Object.DestroyImmediate(reference);
+        }
+    }
+
+    [Test]
     public void SetPlayerMoveInput_UpdatesMoveAndActionDirectionImmediately()
     {
         GameObject player = new GameObject("Player");

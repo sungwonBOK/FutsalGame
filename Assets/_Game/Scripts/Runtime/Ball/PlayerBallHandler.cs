@@ -106,14 +106,27 @@ public class PlayerBallHandler : MonoBehaviour
 
     public void StartCharge(Vector3 actionDirection)
     {
-        interaction.StartCharge(Time.time, actionDirection, transform.forward);
+        StartCharge(BallChargeAction.Shot);
     }
 
     public void ReleaseCharge()
     {
+        ReleaseCharge(BallChargeAction.Shot, transform.forward);
+    }
+
+    public void StartCharge(BallChargeAction action)
+    {
+        interaction?.TryStartCharge(Time.time, action);
+    }
+
+    public void ReleaseCharge(BallChargeAction action, Vector3 releaseDirection)
+    {
         Vector3 impulse;
-        if (interaction.TryReleaseCharge(Time.time, transform.forward, out impulse))
-            PlayShotPresentation(CaptureShotDirection(impulse, transform.forward));
+        if (interaction != null && interaction.TryReleaseCharge(Time.time, action, releaseDirection, transform.forward, out impulse))
+        {
+            if (action == BallChargeAction.Shot)
+                PlayShotPresentation(CaptureShotDirection(impulse, transform.forward));
+        }
     }
 
     public void CancelCharge()
