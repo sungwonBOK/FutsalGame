@@ -1,10 +1,14 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEngine;
 
 public class GameplayInputReaderTests
 {
+    private const string InputActionsAssetPath = "Assets/_Game/Settings/InputSystem_Actions.inputactions";
     private const string PlayerAndOtherMapsJson = @"{
         ""name"": ""GameplayInputReaderTests"",
         ""maps"": [
@@ -90,6 +94,25 @@ public class GameplayInputReaderTests
         }
     }
 
+    [Test]
+    public void PlayerMap_ContainsTheGameplayInputBindingContract()
+    {
+        ScriptableObject asset = AssetDatabase.LoadAssetAtPath<ScriptableObject>(InputActionsAssetPath);
+
+        Assert.That(asset, Is.Not.Null, $"Expected input action asset at {InputActionsAssetPath}.");
+        AssertActionBindings(asset, "Move", "<Keyboard>/w", "<Keyboard>/upArrow", "<Keyboard>/a", "<Keyboard>/leftArrow", "<Keyboard>/s", "<Keyboard>/downArrow", "<Keyboard>/d", "<Keyboard>/rightArrow");
+        AssertActionBindings(asset, "Sprint", "<Keyboard>/leftShift", "<Keyboard>/rightShift");
+        AssertActionBindings(asset, "Pass", "<Mouse>/leftButton");
+        AssertActionBindings(asset, "Shot", "<Mouse>/rightButton");
+        AssertActionBindings(asset, "CancelCharge", "<Keyboard>/c");
+        AssertActionBindings(asset, "Dodge", "<Keyboard>/l");
+        AssertActionBindings(asset, "Punch", "<Keyboard>/j");
+        AssertActionBindings(asset, "SlideTackle", "<Keyboard>/k");
+        AssertActionBindings(asset, "Pause", "<Keyboard>/escape");
+        AssertActionBindings(asset, "Restart", "<Keyboard>/r", "<Keyboard>/space");
+        AssertActionBindings(asset, "ToggleLegacyCamera", "<Keyboard>/f5");
+    }
+
     private static GameplayInputReader CreateReader(ScriptableObject asset)
     {
         GameObject host = new GameObject("GameplayInputReaderTests");
@@ -116,6 +139,24 @@ public class GameplayInputReaderTests
     private static object FindActionMap(ScriptableObject asset, string mapName)
     {
         return asset.GetType().GetMethod("FindActionMap", new[] { typeof(string), typeof(bool) }).Invoke(asset, new object[] { mapName, false });
+    }
+
+    private static void AssertActionBindings(ScriptableObject asset, string actionName, params string[] expectedPaths)
+    {
+        object action = FindAction(asset, actionName);
+        Assert.That(action, Is.Not.Null, $"Expected Player/{actionName} action.");
+
+        IEnumerable bindings = (IEnumerable)action.GetType().GetProperty("bindings").GetValue(action);
+        List<string> actualPaths = new List<string>();
+        foreach (object binding in bindings)
+        {
+            string path = (string)binding.GetType().GetProperty("effectivePath").GetValue(binding);
+            if (!string.IsNullOrEmpty(path))
+                actualPaths.Add(path);
+        }
+
+        foreach (string expectedPath in expectedPaths)
+            Assert.That(actualPaths, Does.Contain(expectedPath), $"Expected Player/{actionName} to bind {expectedPath}.");
     }
 
     private static void ApplyBindingOverride(object action, string path)
