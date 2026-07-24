@@ -4,7 +4,186 @@ using UnityEngine;
 public class ThirdPersonActionCameraTests
 {
     [Test]
-    public void ThirdPersonCameraMode_PrefersMoveIntentForItsDesiredYaw()
+    public void ManualLook_AppliesMouseSensitivityWithoutChangingCharacterState()
+    {
+        CameraLookController controller = new CameraLookController();
+        controller.Initialize(10f, 5f);
+
+        CameraLookState state = controller.Update(
+            new Vector2(3f, -2f),
+            yawSensitivity: 2f,
+            pitchSensitivity: 4f,
+            invertY: false,
+            minPitch: -35f,
+            maxPitch: 65f);
+
+        Assert.That(state.Yaw, Is.EqualTo(16f).Within(0.001f));
+        Assert.That(state.Pitch, Is.EqualTo(-3f).Within(0.001f));
+    }
+
+    [Test]
+    public void ManualLook_ClampsPitchAndKeepsYawForZeroDelta()
+    {
+        CameraLookController controller = new CameraLookController();
+        controller.Initialize(42f, 60f);
+
+        CameraLookState state = controller.Update(
+            Vector2.zero,
+            yawSensitivity: 1f,
+            pitchSensitivity: 1f,
+            invertY: false,
+            minPitch: -35f,
+            maxPitch: 45f);
+
+        Assert.That(state.Yaw, Is.EqualTo(42f).Within(0.001f));
+        Assert.That(state.Pitch, Is.EqualTo(45f).Within(0.001f));
+    }
+
+    [Test]
+    public void PossessionCameraMode_UsesManualYawForForwardFraming()
+    {
+        ThirdPersonActionCameraSettings settings = ScriptableObject.CreateInstance<ThirdPersonActionCameraSettings>();
+        try
+        {
+            settings.possessionLookForwardOffset = 0.6f;
+            CameraContext context = new CameraContext(
+                playerPosition: Vector3.zero,
+                velocity: Vector3.zero,
+                hasBallTarget: true,
+                ballPosition: Vector3.right,
+                deltaTime: 0.1f,
+                isTargetBallOwner: true);
+
+            CameraModeResult result = new PossessionCameraMode().Resolve(
+                context,
+                settings,
+                new CameraLookState(90f, 0f));
+
+            Assert.That(result.LookPoint.x, Is.EqualTo(settings.possessionLookForwardOffset).Within(0.001f));
+            Assert.That(result.LookPoint.z, Is.EqualTo(0f).Within(0.001f));
+        }
+        finally
+        {
+            Object.DestroyImmediate(settings);
+        }
+    }
+
+    [Test]
+    public void FollowRigPose_UsesManualYawWithoutTiltingCinemachineBody()
+    {
+        CameraRigPose pose = PositionResolver.BuildFollowRigPose(
+            Vector3.zero,
+            new CameraLookState(90f, 30f),
+            1.7f);
+
+        Assert.That(Mathf.DeltaAngle(90f, pose.Rotation.eulerAngles.y), Is.EqualTo(0f).Within(0.01f));
+        Assert.That(Mathf.DeltaAngle(0f, pose.Rotation.eulerAngles.x), Is.EqualTo(0f).Within(0.01f));
+    }
+
+    [Test]
+    public void LookOffset_UsesPitchToMoveOnlyTheAimTarget()
+    {
+        Vector3 offset = CameraLookOffsetResolver.Resolve(pitch: 30f, maxPitch: 60f, maxVerticalOffset: 2.4f);
+
+        Assert.That(offset.x, Is.EqualTo(0f).Within(0.001f));
+        Assert.That(offset.y, Is.EqualTo(1.2f).Within(0.001f));
+        Assert.That(offset.z, Is.EqualTo(0f).Within(0.001f));
+    }
+
+    [Test]
+    public void CameraDirector_SelectsPossessionProfileWhenTargetOwnsBall()
+    {
+        ThirdPersonActionCameraSettings settings = ScriptableObject.CreateInstance<ThirdPersonActionCameraSettings>();
+        try
+        {
+            settings.possessionLookForwardOffset = 0.6f;
+            settings.possessionDistanceOffset = -0.8f;
+            settings.possessionHeightOffset = -0.3f;
+            CameraContext context = new CameraContext(
+                playerPosition: Vector3.zero,
+                velocity: Vector3.zero,
+                hasBallTarget: true,
+                ballPosition: Vector3.right,
+                deltaTime: 0.1f,
+                isTargetBallOwner: true);
+
+            CameraModeResult result = new CameraDirector().Resolve(context, settings, new CameraLookState(0f, 0f));
+
+            Assert.That(result.BaseMode, Is.EqualTo(CameraBaseMode.Possession));
+            Assert.That(result.LookPoint, Is.EqualTo(new Vector3(0f, settings.lookAtHeight, settings.possessionLookForwardOffset)));
+            Assert.That(result.Framing.Distance, Is.EqualTo(settings.distance + settings.possessionDistanceOffset));
+            Assert.That(result.Framing.Height, Is.EqualTo(settings.height + settings.possessionHeightOffset));
+        }
+        finally
+        {
+            Object.DestroyImmediate(settings);
+        }
+    }
+
+    [Test]
+    public void CameraDirector_ReturnsToThirdPersonWhenTargetLosesBall()
+    {
+        ThirdPersonActionCameraSettings settings = ScriptableObject.CreateInstance<ThirdPersonActionCameraSettings>();
+        try
+        {
+            CameraContext context = new CameraContext(
+                playerPosition: Vector3.zero,
+                velocity: Vector3.zero,
+                hasBallTarget: true,
+                ballPosition: Vector3.right,
+                deltaTime: 0.1f,
+                isTargetBallOwner: false);
+
+            CameraModeResult result = new CameraDirector().Resolve(context, settings, new CameraLookState(0f, 0f));
+
+            Assert.That(result.BaseMode, Is.EqualTo(CameraBaseMode.ThirdPerson));
+            Assert.That(result.Framing.Distance, Is.EqualTo(settings.distance));
+            Assert.That(result.Framing.Height, Is.EqualTo(settings.height));
+        }
+        finally
+        {
+            Object.DestroyImmediate(settings);
+        }
+    }
+
+    [Test]
+    public void CameraContextProvider_UsesBallControllerOwnerAsTargetOwnership()
+    {
+        GameObject ballObject = new GameObject("Ball");
+        GameObject playerObject = new GameObject("Player");
+        try
+        {
+            ballObject.AddComponent<SphereCollider>();
+            ballObject.AddComponent<Rigidbody>();
+            BallController ball = ballObject.AddComponent<BallController>();
+            typeof(BallController)
+                .GetMethod("Awake", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                .Invoke(ball, null);
+            playerObject.AddComponent<CharacterState>();
+            PlayerBallHandler player = playerObject.AddComponent<PlayerBallHandler>();
+            CameraContextProvider provider = new CameraContextProvider(
+                playerObject.transform,
+                playerObject.GetComponent<Rigidbody>(),
+                ballObject.transform,
+                null);
+
+            Assert.That(ball.TryAcquire(player), Is.True);
+            Assert.That(provider.TryGet(0.1f, out CameraContext ownedContext), Is.True);
+            Assert.That(ownedContext.IsTargetBallOwner, Is.True);
+
+            ball.ClearOwner();
+            Assert.That(provider.TryGet(0.1f, out CameraContext releasedContext), Is.True);
+            Assert.That(releasedContext.IsTargetBallOwner, Is.False);
+        }
+        finally
+        {
+            Object.DestroyImmediate(playerObject);
+            Object.DestroyImmediate(ballObject);
+        }
+    }
+
+    [Test]
+    public void ThirdPersonCameraMode_UsesStaticPlayerFraming()
     {
         ThirdPersonActionCameraSettings settings = ScriptableObject.CreateInstance<ThirdPersonActionCameraSettings>();
         try
@@ -12,20 +191,13 @@ public class ThirdPersonActionCameraTests
             CameraContext context = new CameraContext(
                 playerPosition: Vector3.zero,
                 velocity: Vector3.back * 10f,
-                hasMoveIntent: true,
-                moveIntent: Vector3.right,
-                actionIntent: Vector3.forward,
-                targetForward: Vector3.back,
                 hasBallTarget: false,
                 ballPosition: Vector3.zero,
-                currentYaw: 0f,
                 deltaTime: 0.1f);
 
-            CameraModeResult result = new ThirdPersonCameraMode().Resolve(context, settings);
+            CameraModeResult result = new ThirdPersonCameraMode().Resolve(context, settings, new CameraLookState(90f, 30f));
 
-            Assert.That(Mathf.Abs(Mathf.DeltaAngle(90f, result.DesiredYaw)), Is.LessThan(0.001f));
             Assert.That(result.LookPoint, Is.EqualTo(Vector3.up * settings.lookAtHeight));
-            Assert.That(result.BallHintRequired, Is.False);
         }
         finally
         {
@@ -43,141 +215,29 @@ public class ThirdPersonActionCameraTests
             new Vector3(4f, 5f, 6f),
             Quaternion.Euler(0f, 30f, 0f));
 
-        CameraPlan plan = CameraPlanBuilder.Build(cameraPose, followRigPose, 88f);
+        CameraFramingProfile framing = new CameraFramingProfile(
+            lookAtHeight: 1.7f,
+            lookForwardOffset: 0f,
+            distance: 6.4f,
+            height: 3.5f,
+            fovBias: 0f);
+        Vector3 aimTargetOffset = Vector3.up * 1.2f;
+
+        CameraPlan plan = CameraPlanBuilder.Build(cameraPose, followRigPose, 88f, framing, aimTargetOffset);
 
         Assert.That(plan.CameraPose.Position, Is.EqualTo(cameraPose.Position));
         Assert.That(plan.CameraPose.Rotation, Is.EqualTo(cameraPose.Rotation));
         Assert.That(plan.FollowRigPose.Position, Is.EqualTo(followRigPose.Position));
         Assert.That(plan.FieldOfView, Is.EqualTo(88f));
-    }
-
-    [Test]
-    public void UpdateYaw_InsideDeadZone_DoesNotRotate()
-    {
-        float velocity = 0f;
-
-        float yaw = ThirdPersonActionCamera.UpdateYaw(0f, 4f, ref velocity, 0.016f, 8f, 0.2f, 180f);
-
-        Assert.That(yaw, Is.EqualTo(0f).Within(0.001f));
-    }
-
-    [Test]
-    public void UpdateYaw_ClampsToMaximumRotationSpeed()
-    {
-        float velocity = 0f;
-
-        float yaw = ThirdPersonActionCamera.UpdateYaw(0f, 90f, ref velocity, 0.1f, 0f, 0.001f, 45f);
-
-        Assert.That(yaw, Is.LessThanOrEqualTo(4.5f + 0.001f));
-    }
-
-    [Test]
-    public void UpdateYaw_QuickTurnUsesFastRotationForSideTurn()
-    {
-        float velocity = 0f;
-
-        float yaw = ThirdPersonActionCamera.UpdateYaw(
-            currentYaw: 0f,
-            desiredYaw: 90f,
-            yawVelocity: ref velocity,
-            deltaTime: 0.1f,
-            deadZone: 0f,
-            smoothTime: 0.24f,
-            maxRotationSpeed: 90f,
-            quickTurnAngle: 75f,
-            quickTurnSmoothTime: 0.01f,
-            quickTurnMaxRotationSpeed: 720f);
-
-        Assert.That(Mathf.Abs(Mathf.DeltaAngle(0f, yaw)), Is.GreaterThan(9f));
-    }
-
-    [Test]
-    public void UpdateYaw_OppositeTurnUsesNormalRotationLimit()
-    {
-        float velocity = 0f;
-
-        float yaw = ThirdPersonActionCamera.UpdateYaw(
-            currentYaw: 0f,
-            desiredYaw: 180f,
-            yawVelocity: ref velocity,
-            deltaTime: 0.1f,
-            deadZone: 0f,
-            smoothTime: 0.24f,
-            maxRotationSpeed: 90f,
-            quickTurnAngle: 75f,
-            quickTurnSmoothTime: 0.01f,
-            quickTurnMaxRotationSpeed: 720f);
-
-        Assert.That(Mathf.Abs(Mathf.DeltaAngle(0f, yaw)), Is.LessThanOrEqualTo(9f + 0.001f));
-    }
-
-    [Test]
-    public void ApplyBallAssist_DoesNotFlipWhenBallIsBehindPlayer()
-    {
-        float yaw = ThirdPersonActionCamera.ApplyBallAssistYaw(
-            currentYaw: 0f,
-            playerPosition: Vector3.zero,
-            ballPosition: Vector3.back * 10f,
-            edgeAngle: 35f,
-            maxAssistAngle: 120f,
-            strength: 0.25f);
-
-        Assert.That(Mathf.Abs(Mathf.DeltaAngle(0f, yaw)), Is.LessThan(45f));
-    }
-
-    [Test]
-    public void ApplyBallAssist_WithNoActiveInputDoesNotChaseMovingBall()
-    {
-        float yaw = ThirdPersonActionCamera.ApplyBallAssistYaw(
-            currentYaw: 0f,
-            playerPosition: Vector3.zero,
-            ballPosition: Vector3.right * 10f,
-            edgeAngle: 10f,
-            maxAssistAngle: 120f,
-            strength: 1f,
-            hasActiveMoveInput: false,
-            activeMoveYaw: 0f,
-            maxActiveInputAssistAngle: 6f);
-
-        Assert.That(yaw, Is.EqualTo(0f).Within(0.001f));
-    }
-
-    [Test]
-    public void SelectHeading_PrefersMoveIntentOverVelocity()
-    {
-        Vector3 heading = ThirdPersonActionCamera.SelectHeading(
-            hasMoveIntent: true,
-            moveIntent: Vector3.right,
-            actionIntent: Vector3.forward,
-            velocity: Vector3.back * 10f,
-            targetForward: Vector3.back,
-            fallbackYaw: 180f,
-            movementPrioritySpeed: 0.5f);
-
-        Assert.That(heading, Is.EqualTo(Vector3.right));
-    }
-
-    [Test]
-    public void ApplyBallAssist_WithActiveInputCannotOpposeIntent()
-    {
-        float yaw = ThirdPersonActionCamera.ApplyBallAssistYaw(
-            currentYaw: 0f,
-            playerPosition: Vector3.zero,
-            ballPosition: Vector3.back * 10f,
-            edgeAngle: 10f,
-            maxAssistAngle: 179f,
-            strength: 1f,
-            hasActiveMoveInput: true,
-            activeMoveYaw: 0f,
-            maxActiveInputAssistAngle: 6f);
-
-        Assert.That(Mathf.Abs(Mathf.DeltaAngle(0f, yaw)), Is.LessThanOrEqualTo(6f + 0.001f));
+        Assert.That(plan.Framing.Distance, Is.EqualTo(6.4f));
+        Assert.That(plan.Framing.Height, Is.EqualTo(3.5f));
+        Assert.That(plan.AimTargetOffset, Is.EqualTo(aimTargetOffset));
     }
 
     [Test]
     public void CalculateTargetFov_ClampsSprintBoost()
     {
-        float fov = ThirdPersonActionCamera.CalculateTargetFov(
+        float fov = FovResolver.CalculateTargetFov(
             baseFov: 85f,
             speed: 100f,
             sprintSpeed: 8f,
@@ -189,7 +249,7 @@ public class ThirdPersonActionCameraTests
     [Test]
     public void BuildStableLookRotation_KeepsRollAtZero()
     {
-        Quaternion rotation = ThirdPersonActionCamera.BuildStableLookRotation(
+        Quaternion rotation = PositionResolver.BuildStableLookRotation(
             cameraPosition: new Vector3(0f, 5f, -6f),
             lookPoint: new Vector3(1f, 1.5f, 2f));
 
@@ -197,11 +257,11 @@ public class ThirdPersonActionCameraTests
     }
 
     [Test]
-    public void BuildFollowRigPose_UsesLookPointHeightAndYawOnly()
+    public void BuildFollowRigPose_UsesManualLookState()
     {
-        CameraRigPose pose = ThirdPersonActionCamera.BuildFollowRigPose(
+        CameraRigPose pose = PositionResolver.BuildFollowRigPose(
             playerPosition: new Vector3(1f, 0f, 2f),
-            yaw: 35f,
+            look: new CameraLookState(35f, 20f),
             lookAtHeight: 1.7f);
 
         Assert.That(pose.Position, Is.EqualTo(new Vector3(1f, 1.7f, 2f)));
@@ -236,4 +296,5 @@ public class ThirdPersonActionCameraTests
             Object.DestroyImmediate(followTargetObject);
         }
     }
+
 }

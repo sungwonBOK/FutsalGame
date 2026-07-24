@@ -4,20 +4,19 @@ public sealed class CameraContextProvider
 {
     private Transform playerTarget;
     private Rigidbody playerRigidbody;
-    private CharacterLocomotion playerLocomotion;
+    private PlayerBallHandler playerBallHandler;
     private Transform ballTarget;
+    private BallController ballController;
     private readonly Transform cameraTransform;
 
     public CameraContextProvider(
         Transform playerTarget,
         Rigidbody playerRigidbody,
-        CharacterLocomotion playerLocomotion,
         Transform ballTarget,
         Transform cameraTransform)
     {
         this.playerTarget = playerTarget;
         this.playerRigidbody = playerRigidbody;
-        this.playerLocomotion = playerLocomotion;
         this.ballTarget = ballTarget;
         this.cameraTransform = cameraTransform;
     }
@@ -40,19 +39,22 @@ public sealed class CameraContextProvider
 
         if (playerRigidbody == null && playerTarget != null)
             playerRigidbody = playerTarget.GetComponent<Rigidbody>();
-        if (playerLocomotion == null && playerTarget != null)
-            playerLocomotion = ResolveLocomotion(playerTarget);
+        if (playerBallHandler == null && playerTarget != null)
+            playerBallHandler = playerTarget.GetComponent<PlayerBallHandler>();
+        if (ballController == null && ballTarget != null)
+            ballController = ballTarget.GetComponent<BallController>();
     }
 
     public void SetTargets(Transform player, Rigidbody playerBody, Transform ball)
     {
         playerTarget = player;
         playerRigidbody = playerBody;
-        playerLocomotion = ResolveLocomotion(playerTarget);
+        playerBallHandler = playerTarget != null ? playerTarget.GetComponent<PlayerBallHandler>() : null;
         ballTarget = ball;
+        ballController = ballTarget != null ? ballTarget.GetComponent<BallController>() : null;
     }
 
-    public bool TryGet(float currentYaw, float deltaTime, out CameraContext context)
+    public bool TryGet(float deltaTime, out CameraContext context)
     {
         ResolveMissingTargets();
         if (playerTarget == null)
@@ -64,30 +66,12 @@ public sealed class CameraContextProvider
         context = new CameraContext(
             playerPosition: playerTarget.position,
             velocity: playerRigidbody != null ? playerRigidbody.linearVelocity : Vector3.zero,
-            hasMoveIntent: playerLocomotion != null && playerLocomotion.HasMoveInput,
-            moveIntent: playerLocomotion != null ? playerLocomotion.MoveDirection : Vector3.zero,
-            actionIntent: playerLocomotion != null ? playerLocomotion.ActionDirection : playerTarget.forward,
-            targetForward: playerTarget.forward,
             hasBallTarget: ballTarget != null,
             ballPosition: ballTarget != null ? ballTarget.position : playerTarget.position,
-            currentYaw: currentYaw,
             deltaTime: Mathf.Max(deltaTime, 0.0001f),
             currentCameraPosition: cameraTransform != null ? cameraTransform.position : Vector3.zero,
-            cameraRight: cameraTransform != null ? cameraTransform.right : Vector3.right);
+            cameraRight: cameraTransform != null ? cameraTransform.right : Vector3.right,
+            isTargetBallOwner: ballController != null && ballController.CurrentOwner == playerBallHandler);
         return true;
-    }
-
-    private static CharacterLocomotion ResolveLocomotion(Transform target)
-    {
-        if (target == null)
-            return null;
-
-        CharacterLocomotion locomotion = target.GetComponent<CharacterLocomotion>();
-        if (locomotion != null)
-            return locomotion;
-
-        return target.GetComponent<CharacterMotor>() != null
-            ? target.gameObject.AddComponent<CharacterLocomotion>()
-            : null;
     }
 }

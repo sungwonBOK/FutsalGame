@@ -12,21 +12,20 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c06fe6bdde1efd04b8f26bc8cc825345, type: 3}
   m_Name: ThirdPersonActionCameraSettings
   m_EditorClassIdentifier: FutsalGame.Runtime::ThirdPersonActionCameraSettings
-  distance: 7.2
-  height: 4.1
+  distance: 6.4
+  height: 3.5
   lookAtHeight: 1.7
   positionSmoothTime: 0.12
-  rotationSmoothTime: 0.32
-  maxRotationSpeed: 170
-  rotationDeadZone: 8
-  movementPrioritySpeed: 0.75
-  quickTurnAngle: 105
-  quickTurnSmoothTime: 0.08
-  quickTurnMaxRotationSpeed: 320
-  ballAssistStrength: 0.22
-  ballAssistEdgeAngle: 35
-  ballAssistMaxAngle: 120
-  ballAssistActiveInputMaxAngle: 6
+  mouseYawSensitivity: 0.12
+  mousePitchSensitivity: 0.12
+  invertMouseY: 0
+  minPitch: -35
+  maxPitch: 65
+  maxPitchLookOffset: 2.4
+  possessionLookForwardOffset: 0.45
+  possessionDistanceOffset: -0.8
+  possessionHeightOffset: -0.3
+  possessionFovBias: 0
   collisionRadius: 0.35
   minCollisionDistance: 1.25
   collisionMoveInSmoothTime: 0.06

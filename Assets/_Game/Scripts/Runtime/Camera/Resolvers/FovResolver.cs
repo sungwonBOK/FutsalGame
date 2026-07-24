@@ -4,10 +4,10 @@ public sealed class FovResolver
 {
     private float fovVelocity;
 
-    public float Resolve(float currentFov, CameraContext context, ThirdPersonActionCameraSettings settings)
+    public float Resolve(float currentFov, CameraContext context, CameraModeResult mode, ThirdPersonActionCameraSettings settings)
     {
         float speed = new Vector3(context.Velocity.x, 0f, context.Velocity.z).magnitude;
-        float targetFov = CalculateTargetFov(settings.baseFov, speed, settings.sprintSpeed, settings.sprintFovBoost);
+        float targetFov = CalculateTargetFov(settings.baseFov + mode.Framing.FovBias, speed, settings.sprintSpeed, settings.sprintFovBoost);
         return Mathf.SmoothDamp(currentFov, targetFov, ref fovVelocity, settings.fovSmoothTime, Mathf.Infinity, context.DeltaTime);
     }
 

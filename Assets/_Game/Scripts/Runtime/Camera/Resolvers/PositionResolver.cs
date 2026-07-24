@@ -25,16 +25,19 @@ public sealed class PositionResolver
 
     public CameraPositionResult Resolve(
         CameraModeResult mode,
-        float yaw,
+        CameraLookState look,
+        Vector3 aimTargetOffset,
         CameraContext context,
         ThirdPersonActionCameraSettings settings,
         bool useCinemachineBackend)
     {
-        CameraRigPose followRigPose = BuildFollowRigPose(context.PlayerPosition, yaw, settings.lookAtHeight);
+        CameraRigPose followRigPose = BuildFollowRigPose(context.PlayerPosition, look, mode.Framing.LookAtHeight);
         if (useCinemachineBackend)
             return new CameraPositionResult(default, followRigPose);
 
-        float desiredDistance = ResolveCollisionDistance(mode.LookPoint, yaw, settings);
+        CameraLookState orbitLook = new CameraLookState(look.Yaw, 0f);
+        Vector3 aimPoint = mode.LookPoint + aimTargetOffset;
+        float desiredDistance = ResolveCollisionDistance(mode.LookPoint, orbitLook, mode.Framing, settings);
         float distanceSmoothTime = desiredDistance < currentDistance
             ? settings.collisionMoveInSmoothTime
             : settings.collisionReturnSmoothTime;
@@ -45,7 +48,7 @@ public sealed class PositionResolver
             distanceSmoothTime,
             Mathf.Infinity,
             context.DeltaTime);
-        Vector3 desiredPosition = BuildCameraPosition(mode.LookPoint, yaw, currentDistance, settings.height);
+        Vector3 desiredPosition = BuildCameraPosition(mode.LookPoint, orbitLook, currentDistance, mode.Framing.Height);
         desiredPosition = Vector3.SmoothDamp(
             context.CurrentCameraPosition,
             desiredPosition,
@@ -54,14 +57,14 @@ public sealed class PositionResolver
             Mathf.Infinity,
             context.DeltaTime);
         return new CameraPositionResult(
-            new CameraRigPose(desiredPosition, BuildStableLookRotation(desiredPosition, mode.LookPoint)),
+            new CameraRigPose(desiredPosition, BuildStableLookRotation(desiredPosition, aimPoint)),
             followRigPose);
     }
 
-    public static CameraRigPose BuildFollowRigPose(Vector3 playerPosition, float yaw, float lookAtHeight)
+    public static CameraRigPose BuildFollowRigPose(Vector3 playerPosition, CameraLookState look, float lookAtHeight)
     {
         Vector3 lookPoint = playerPosition + Vector3.up * lookAtHeight;
-        return new CameraRigPose(lookPoint, Quaternion.Euler(0f, yaw, 0f));
+        return new CameraRigPose(lookPoint, Quaternion.Euler(0f, look.Yaw, 0f));
     }
 
     public static Quaternion BuildStableLookRotation(Vector3 cameraPosition, Vector3 lookPoint)
@@ -75,15 +78,15 @@ public sealed class PositionResolver
         return Quaternion.Euler(euler);
     }
 
-    private static Vector3 BuildCameraPosition(Vector3 lookPoint, float yaw, float distance, float height)
+    private static Vector3 BuildCameraPosition(Vector3 lookPoint, CameraLookState look, float distance, float height)
     {
-        Vector3 forward = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+        Vector3 forward = Quaternion.Euler(look.Pitch, look.Yaw, 0f) * Vector3.forward;
         return lookPoint - forward * distance + Vector3.up * height;
     }
 
-    private static float ResolveCollisionDistance(Vector3 lookPoint, float yaw, ThirdPersonActionCameraSettings settings)
+    private static float ResolveCollisionDistance(Vector3 lookPoint, CameraLookState look, CameraFramingProfile framing, ThirdPersonActionCameraSettings settings)
     {
-        Vector3 desiredPosition = BuildCameraPosition(lookPoint, yaw, settings.distance, settings.height);
+        Vector3 desiredPosition = BuildCameraPosition(lookPoint, look, framing.Distance, framing.Height);
         Vector3 toCamera = desiredPosition - lookPoint;
         float desiredDistance = toCamera.magnitude;
         if (desiredDistance <= 0.0001f)
@@ -93,6 +96,6 @@ public sealed class PositionResolver
         if (Physics.SphereCast(lookPoint, settings.collisionRadius, direction, out RaycastHit hit, desiredDistance, settings.collisionMask, QueryTriggerInteraction.Ignore))
             return Mathf.Max(settings.minCollisionDistance, hit.distance - settings.collisionRadius);
 
-        return settings.distance;
+        return framing.Distance;
     }
 }

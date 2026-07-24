@@ -9,20 +9,19 @@ public class ThirdPersonActionCameraSettings : ScriptableObject
     [Min(0f)] public float lookAtHeight = 1.7f;
     [Min(0.01f)] public float positionSmoothTime = 0.12f;
 
-    [Header("Rotation")]
-    [Min(0.01f)] public float rotationSmoothTime = 0.24f;
-    [Min(1f)] public float maxRotationSpeed = 220f;
-    [Min(0f)] public float rotationDeadZone = 8f;
-    [Min(0f)] public float movementPrioritySpeed = 0.75f;
-    [Range(30f, 180f)] public float quickTurnAngle = 75f;
-    [Min(0.01f)] public float quickTurnSmoothTime = 0.08f;
-    [Min(1f)] public float quickTurnMaxRotationSpeed = 720f;
+    [Header("Mouse Look")]
+    [Min(0f)] public float mouseYawSensitivity = 0.12f;
+    [Min(0f)] public float mousePitchSensitivity = 0.12f;
+    public bool invertMouseY;
+    [Range(-89f, 0f)] public float minPitch = -35f;
+    [Range(0f, 89f)] public float maxPitch = 65f;
+    [Min(0f)] public float maxPitchLookOffset = 2.4f;
 
-    [Header("Ball Assist")]
-    [Range(0f, 1f)] public float ballAssistStrength = 0.22f;
-    [Range(0f, 120f)] public float ballAssistEdgeAngle = 35f;
-    [Range(45f, 179f)] public float ballAssistMaxAngle = 120f;
-    [Range(0f, 30f)] public float ballAssistActiveInputMaxAngle = 6f;
+    [Header("Possession Framing")]
+    [Min(0f)] public float possessionLookForwardOffset = 0.45f;
+    [Range(-3f, 3f)] public float possessionDistanceOffset = -0.8f;
+    [Range(-3f, 3f)] public float possessionHeightOffset = -0.3f;
+    [Range(-10f, 10f)] public float possessionFovBias = 0f;
 
     [Header("Collision")]
     [Min(0.05f)] public float collisionRadius = 0.35f;

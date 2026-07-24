@@ -92,14 +92,27 @@ Assets/
     - 캐릭터 상태 계층은 이동/기절 등 행동 권한을 제공하고, Ball 코드는 권한을 판단해 소유·상호작용을 허용하거나 취소한다.
     - Combat은 피격 대상 판정 후 facade에 공 해제를 요청할 뿐, `BallController`의 Rigidbody·Collider·소유 상태를 직접 변경하지 않는다.
 
+  - Implementation update: `BallInteractionController` owns the sprint-touch timer plus one active `Pass` or `Shot` charge, its force calculation, and cancellation. It receives the release-time camera direction instead of retaining a charge-start direction. `PlayerBallHandler` remains the compatibility facade and Unity presentation boundary.
+
 - `Combat/`
   - 펀치, 태클, 히트 판정, 스턴, 넉백, 쿨다운
 
 - `Input/`
   - 사람 플레이어 입력 처리
+  - `PlayerActionBindings`는 패스, 슛, 취소의 마우스 버튼과 선택적 키보드 키를 설정으로 보관한다.
+  - `PlayerActionInputReader`는 바인딩을 pressed/held/released 상태로 변환하며 게임 규칙을 알지 않는다.
 
 - `Camera/`
   - Futsal 전용 카메라 정책과 Cinemachine backend adapter
+  - 루트에는 `ThirdPersonActionCamera`, 설정, MonoBehaviour adapter를 둔다.
+  - `Core/`
+    - 카메라 context, director, mode 결과, 최종 plan처럼 모드 공통 데이터를 둔다.
+  - `Modes/`
+    - 기본 3인칭과 이후 추가되는 possession 등 프레이밍 정책을 둔다.
+  - `Resolvers/`
+    - aim, position/collision, FOV, effect처럼 값 종류별 계산을 둔다.
+  - `Backends/`
+    - Unity Camera와 Cinemachine에 최종 plan을 적용하는 구현을 둔다.
 
 - `AI/`
   - 간단 AI 판단과 행동 선택
@@ -139,3 +152,17 @@ Assets/
 - `Library/`, `Temp/`, `Logs/`, `obj/`, `UserSettings/`는 관리 대상에서 제외한다.
 - 기능 구현 중 대규모 구조 이동은 피하고, 구조 정리는 별도 작업으로 분리한다.
 - `ExperimentalNet/` 코드는 승인 전 온라인 기능 확장 없이 실험/정리 대상으로만 다룬다.
+
+## 2026-07-22 Camera Look boundary
+
+- `Assets/_Game/Scripts/Runtime/Input/MouseLookInput.cs`
+  - 마우스 delta와 커서 잠금 상태만 담당한다.
+- `Assets/_Game/Scripts/Runtime/Camera/Look/`
+  - `CameraLookController`는 수동 yaw/pitch, 감도, Y축 반전, pitch 제한만 담당한다.
+  - `CameraLookState`는 입력을 읽지 않고 해석된 yaw/pitch만 카메라 코드에 전달한다.
+- `Camera/Core/`와 `Camera/Modes/`
+  - 3인칭/공 소유 프레이밍만 선택하며, 카메라 heading이나 ball-assist yaw를 결정하지 않는다.
+- `Camera/Resolvers/PositionResolver`
+  - 수동 yaw로 카메라 뒤쪽 위치를 계산하고, pitch는 aim target offset으로 분리한다. 충돌 거리 보정도 유지한다.
+- `Camera/CinemachineActionCameraBackend`
+  - follow rig에는 yaw만 적용하며, `CinemachineThirdPersonFollow`에는 framing 거리/높이, `CinemachineHardLookAt`에는 pitch aim offset을 전달한다.
