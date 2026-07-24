@@ -1,36 +1,29 @@
+using System.IO;
 using NUnit.Framework;
 using UnityEngine;
 
 public class PlayerActionInputReaderTests
 {
-    [Test]
-    public void DefaultBindings_UseMouseForBallActionsAndCForCancel()
-    {
-        PlayerActionBindings bindings = ScriptableObject.CreateInstance<PlayerActionBindings>();
-        try
-        {
-            Assert.That(bindings.Pass.MouseButton, Is.EqualTo(PlayerMouseButton.Left));
-            Assert.That(bindings.Pass.KeyboardKeyName, Is.EqualTo("None"));
-            Assert.That(bindings.Shot.MouseButton, Is.EqualTo(PlayerMouseButton.Right));
-            Assert.That(bindings.Shot.KeyboardKeyName, Is.EqualTo("None"));
-            Assert.That(bindings.Cancel.MouseButton, Is.EqualTo(PlayerMouseButton.None));
-            Assert.That(bindings.Cancel.KeyboardKeyName, Is.EqualTo("C"));
-        }
-        finally
-        {
-            Object.DestroyImmediate(bindings);
-        }
-    }
+    private static string PlayerInputPath => Path.Combine(
+        Application.dataPath,
+        "_Game/Scripts/Runtime/Input/PlayerInput.cs");
 
     [Test]
-    public void Combine_ReportsReleaseOnlyAfterEveryConfiguredAlternativeIsReleased()
+    public void PlayerInput_UsesSemanticGameplayInputActionsInsteadOfRawControls()
     {
-        ActionButtonState mouseState = new ActionButtonState(wasPressed: false, isPressed: true, wasReleased: false);
-        ActionButtonState keyboardState = new ActionButtonState(wasPressed: false, isPressed: false, wasReleased: true);
+        string source = File.ReadAllText(PlayerInputPath);
 
-        ActionButtonState combined = PlayerActionInputReader.Combine(mouseState, keyboardState);
-
-        Assert.That(combined.IsPressed, Is.True);
-        Assert.That(combined.WasReleased, Is.False);
+        Assert.That(source, Does.Contain("inputReader.ReadMove()"));
+        Assert.That(source, Does.Contain("GameplayInputAction.Sprint"));
+        Assert.That(source, Does.Contain("GameplayInputAction.Pass"));
+        Assert.That(source, Does.Contain("GameplayInputAction.Shot"));
+        Assert.That(source, Does.Contain("GameplayInputAction.CancelCharge"));
+        Assert.That(source, Does.Contain("GameplayInputAction.Dodge"));
+        Assert.That(source, Does.Contain("GameplayInputAction.Punch"));
+        Assert.That(source, Does.Contain("GameplayInputAction.SlideTackle"));
+        Assert.That(source, Does.Not.Contain("Keyboard.current"));
+        Assert.That(source, Does.Not.Contain("Mouse.current"));
+        Assert.That(source, Does.Not.Contain("PlayerActionBindings"));
+        Assert.That(source, Does.Not.Contain("PlayerActionInputReader"));
     }
 }

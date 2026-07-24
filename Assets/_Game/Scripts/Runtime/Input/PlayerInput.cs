@@ -1,29 +1,14 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 public class PlayerInput : MonoBehaviour
 {
     [SerializeField] private Transform movementReference;
-    [SerializeField] private PlayerActionBindings actionBindings;
+    [SerializeField] private GameplayInputReader inputReader;
 
     private CharacterLocomotion locomotion;
     private CombatController combat;
     private PlayerBallHandler ball;
     private CharacterState state;
-    private PlayerActionBindings runtimeActionBindings;
-
-    private PlayerActionBindings ActionBindings
-    {
-        get
-        {
-            if (actionBindings != null)
-                return actionBindings;
-
-            if (runtimeActionBindings == null)
-                runtimeActionBindings = ScriptableObject.CreateInstance<PlayerActionBindings>();
-            return runtimeActionBindings;
-        }
-    }
 
     private void Awake()
     {
@@ -41,10 +26,6 @@ public class PlayerInput : MonoBehaviour
 
     private void Update()
     {
-        Keyboard kb = Keyboard.current;
-        if (kb == null && Mouse.current == null)
-            return;
-
         if (!GameManager.PlayActive || (state != null && state.IsStunned))
         {
             locomotion.SetPlayerMoveInput(Vector2.zero, sprint: false, hasBall: ball != null && ball.HasBall);
@@ -53,23 +34,18 @@ public class PlayerInput : MonoBehaviour
             return;
         }
 
-        Vector2 moveInput = BuildMoveInput(
-            kb != null && (kb.aKey.isPressed || kb.leftArrowKey.isPressed),
-            kb != null && (kb.dKey.isPressed || kb.rightArrowKey.isPressed),
-            kb != null && (kb.sKey.isPressed || kb.downArrowKey.isPressed),
-            kb != null && (kb.wKey.isPressed || kb.upArrowKey.isPressed));
-
-        bool sprint = kb != null && (kb.leftShiftKey.isPressed || kb.rightShiftKey.isPressed);
+        Vector2 moveInput = inputReader != null ? inputReader.ReadMove() : Vector2.zero;
+        bool sprint = inputReader != null && inputReader.ReadButton(GameplayInputAction.Sprint).IsPressed;
         bool hasBall = ball != null && ball.HasBall;
         Vector3 moveDirection = BuildCameraRelativeMoveDirection(moveInput, movementReference);
         locomotion.SetPlayerMoveInput(moveInput, moveDirection, sprint, hasBall);
 
         Vector3 actionDirection = locomotion.ActionDirection;
-        if (kb != null && kb.lKey.wasPressedThisFrame)
+        if (inputReader != null && inputReader.ReadButton(GameplayInputAction.Dodge).WasPressed)
             locomotion.TryDodge(actionDirection);
-        if (kb != null && kb.jKey.wasPressedThisFrame && combat != null)
+        if (inputReader != null && inputReader.ReadButton(GameplayInputAction.Punch).WasPressed && combat != null)
             combat.Punch(actionDirection);
-        if (kb != null && kb.kKey.wasPressedThisFrame && combat != null)
+        if (inputReader != null && inputReader.ReadButton(GameplayInputAction.SlideTackle).WasPressed && combat != null)
             combat.SlideTackle(actionDirection);
 
         if (ball != null)
@@ -113,9 +89,15 @@ public class PlayerInput : MonoBehaviour
 
     private void HandleBallActions()
     {
-        ActionButtonState cancel = PlayerActionInputReader.Read(ActionBindings.Cancel);
-        ActionButtonState pass = PlayerActionInputReader.Read(ActionBindings.Pass);
-        ActionButtonState shot = PlayerActionInputReader.Read(ActionBindings.Shot);
+        GameplayInputButtonState cancel = inputReader != null
+            ? inputReader.ReadButton(GameplayInputAction.CancelCharge)
+            : default;
+        GameplayInputButtonState pass = inputReader != null
+            ? inputReader.ReadButton(GameplayInputAction.Pass)
+            : default;
+        GameplayInputButtonState shot = inputReader != null
+            ? inputReader.ReadButton(GameplayInputAction.Shot)
+            : default;
 
         if (cancel.WasPressed)
         {
@@ -139,9 +121,4 @@ public class PlayerInput : MonoBehaviour
             ball.StartCharge(BallChargeAction.Shot);
     }
 
-    private void OnDestroy()
-    {
-        if (runtimeActionBindings != null)
-            Destroy(runtimeActionBindings);
-    }
 }
