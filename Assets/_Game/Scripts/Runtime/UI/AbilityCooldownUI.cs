@@ -20,6 +20,8 @@ public class AbilityCooldownUI : MonoBehaviour
     [Tooltip("사람 플레이어의 CharacterState. 기절 중 표시를 낮추는 데 쓴다. 비우면 playerCombat에서 자동으로 찾는다.")]
     [SerializeField] private CharacterState playerState;
 
+    [SerializeField] private CharacterLocomotion playerLocomotion;
+
     [Header("Layout")]
     [Tooltip("화면 우하단 모서리로부터의 여백(픽셀, 1920x1080 기준).")]
     [SerializeField] private Vector2 screenMargin = new Vector2(48f, 40f);
@@ -36,6 +38,16 @@ public class AbilityCooldownUI : MonoBehaviour
 
     [Tooltip("슬라이딩 아이콘 기본색.")]
     [SerializeField] private Color slideColor = new Color(0.30f, 0.68f, 0.98f);
+
+    [SerializeField] private Color dodgeColor = new Color(0.55f, 0.92f, 0.55f);
+
+    [Header("Stamina Bar")]
+    [SerializeField] private float staminaBarHeight = 12f;
+    [SerializeField] private float staminaBarGap = 10f;
+    [SerializeField] private Color staminaColor = new Color(0.45f, 0.85f, 0.95f);
+    [SerializeField] private Color staminaLowColor = new Color(0.95f, 0.45f, 0.25f);
+    [SerializeField, Range(0f, 1f)] private float sprintHighlight = 0.35f;
+    [SerializeField, Range(0f, 1f)] private float staminaLowThreshold = 0.3f;
 
     [Tooltip("쿨다운 중 아이콘이 어두워지는 정도(0=완전히 검게, 1=그대로).")]
     [Range(0f, 1f)]
@@ -67,6 +79,9 @@ public class AbilityCooldownUI : MonoBehaviour
     private RectTransform root;
     private Pip punchPip;
     private Pip slidePip;
+    private Pip dodgePip;
+    private RectTransform staminaFill;
+    private Image staminaFillImage;
 
     /// <summary>아이콘 하나(원판+링+스윕+라벨)와 그 연출 타이머를 묶은 단위. 펀치/슬라이딩이 같은 코드 경로를 공유한다.</summary>
     private class Pip
@@ -92,6 +107,9 @@ public class AbilityCooldownUI : MonoBehaviour
         if (playerState == null && playerCombat != null)
             playerState = playerCombat.GetComponent<CharacterState>();
 
+        if (playerLocomotion == null && playerCombat != null)
+            playerLocomotion = playerCombat.GetComponent<CharacterLocomotion>();
+
         BuildHierarchy();
     }
 
@@ -107,14 +125,40 @@ public class AbilityCooldownUI : MonoBehaviour
         bool stunned = playerState != null && playerState.IsStunned;
 
         UpdatePip(punchPip, playerCombat.PunchCooldown01, playerCombat.PunchRemaining,
-                  playerCombat.LastPunchRejectedTime, false, stunned);
+                  playerCombat.LastPunchRejectedTime, false, stunned, false);
 
         UpdatePip(slidePip, playerCombat.SlideCooldown01, playerCombat.SlideRemaining,
-                  playerCombat.LastSlideRejectedTime, playerCombat.IsSliding, stunned);
+                  playerCombat.LastSlideRejectedTime, playerCombat.IsSliding, stunned, false);
+
+        if (playerLocomotion != null)
+        {
+            UpdatePip(dodgePip, playerLocomotion.DodgeCooldown01, playerLocomotion.DodgeRemaining,
+                      playerLocomotion.LastDodgeRejectedTime, playerLocomotion.IsDodging, stunned,
+                      playerLocomotion.DodgeBlockedByStamina);
+            UpdateStaminaBar(playerLocomotion.Stamina01, playerLocomotion.IsSprinting, stunned);
+        }
+    }
+
+    private void UpdateStaminaBar(float amount01, bool sprinting, bool stunned)
+    {
+        if (staminaFill == null)
+            return;
+
+        staminaFill.anchorMax = new Vector2(Mathf.Clamp01(amount01), 1f);
+        Color color = amount01 <= staminaLowThreshold
+            ? Color.Lerp(staminaLowColor, staminaColor, amount01 / Mathf.Max(0.0001f, staminaLowThreshold))
+            : staminaColor;
+
+        if (sprinting)
+            color = Color.Lerp(color, Color.white, sprintHighlight);
+        if (stunned)
+            color = Desaturate(Dim(color, 0.5f));
+
+        staminaFillImage.color = color;
     }
 
     /// <summary>아이콘 하나를 현재 상태에 맞춰 갱신한다. 상태를 만들지 않고 읽은 값만 그린다.</summary>
-    private void UpdatePip(Pip p, float cool01, float remaining, float rejectTime, bool isActive, bool stunned)
+    private void UpdatePip(Pip p, float cool01, float remaining, float rejectTime, bool isActive, bool stunned, bool unavailable)
     {
         bool cooling = cool01 > 0f;
 
@@ -136,6 +180,7 @@ public class AbilityCooldownUI : MonoBehaviour
         Color accent = p.accent;
         Color baseCol = cooling ? Dim(accent, cooldownDim) : accent;
         if (isActive) baseCol = Color.Lerp(accent, Color.white, 0.45f);
+        if (unavailable) baseCol = Dim(baseCol, cooldownDim);
 
         // 거절 흔들림 동안 붉게 물들인다.
         float shakeT = Time.unscaledTime - p.shakeStart;
@@ -191,14 +236,35 @@ public class AbilityCooldownUI : MonoBehaviour
 
     private void BuildHierarchy()
     {
+        float rowWidth = pipSize * 3f + pipSpacing * 2f;
         root = NewRect("AbilityCooldownRoot", (RectTransform)transform);
         root.anchorMin = root.anchorMax = root.pivot = new Vector2(1f, 0f);
-        root.sizeDelta = new Vector2(pipSize * 2f + pipSpacing, pipSize + 26f);
+        root.sizeDelta = new Vector2(rowWidth, pipSize + 26f + staminaBarHeight + staminaBarGap);
         root.anchoredPosition = new Vector2(-screenMargin.x, screenMargin.y);
 
         // 오른쪽이 슬라이딩(K), 그 왼쪽이 펀치(J).
-        punchPip = BuildPip("Pip_Punch", "J", "펀치", punchColor, new Vector2(0f, 0f));
-        slidePip = BuildPip("Pip_Slide", "K", "슬라이딩", slideColor, new Vector2(pipSize + pipSpacing, 0f));
+        BuildStaminaBar(rowWidth);
+        float y = staminaBarHeight + staminaBarGap;
+        dodgePip = BuildPip("Pip_Dodge", "L", "회피", dodgeColor, new Vector2(0f, y));
+        punchPip = BuildPip("Pip_Punch", "J", "펀치", punchColor, new Vector2(pipSize + pipSpacing, y));
+        slidePip = BuildPip("Pip_Slide", "K", "슬라이딩", slideColor, new Vector2((pipSize + pipSpacing) * 2f, y));
+    }
+
+    private void BuildStaminaBar(float width)
+    {
+        RectTransform bar = NewRect("StaminaBar", root);
+        bar.anchorMin = bar.anchorMax = bar.pivot = new Vector2(0f, 0f);
+        bar.sizeDelta = new Vector2(width, staminaBarHeight);
+        bar.anchoredPosition = Vector2.zero;
+
+        NewImage("BarBackground", bar, null, new Color(0.02f, 0.03f, 0.06f, 0.72f));
+        Image fill = NewImage("BarFill", bar, null, staminaColor);
+        staminaFillImage = fill;
+        staminaFill = fill.rectTransform;
+        staminaFill.anchorMin = Vector2.zero;
+        staminaFill.anchorMax = Vector2.one;
+        staminaFill.offsetMin = Vector2.zero;
+        staminaFill.offsetMax = Vector2.zero;
     }
 
     private Pip BuildPip(string name, string key, string label, Color accent, Vector2 pos)

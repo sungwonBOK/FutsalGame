@@ -7,6 +7,7 @@ public sealed class BallPossessionController
     private readonly BallConfig config;
 
     private float lastReleaseTime = -999f;
+    public float LastAcquireTime { get; private set; } = -999f;
 
     public bool HasBall => ball != null && ball.HasOwner(owner);
 
@@ -22,7 +23,9 @@ public sealed class BallPossessionController
         if (!startWithBall || ball == null || PlayerBallHandler.CurrentOwner != null)
             return false;
 
-        return ball.TryAcquire(owner);
+        bool acquired = ball.TryAcquire(owner);
+        if (acquired) LastAcquireTime = Time.time;
+        return acquired;
     }
 
     public bool TryAcquire(float now, bool canAcquire)
@@ -33,7 +36,9 @@ public sealed class BallPossessionController
         if (now - lastReleaseTime < config.Possession.reacquireDelay || !WithinAcquireRange())
             return false;
 
-        return ball.TryAcquire(owner);
+        bool acquired = ball.TryAcquire(owner);
+        if (acquired) LastAcquireTime = now;
+        return acquired;
     }
 
     public bool Release(float now, Vector3 impulse)

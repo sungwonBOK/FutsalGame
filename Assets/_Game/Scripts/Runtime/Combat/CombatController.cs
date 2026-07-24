@@ -14,6 +14,7 @@ public class CombatController : MonoBehaviour
 
     private CharacterState state;
     private CharacterMotor motor;
+    private CharacterLocomotion locomotion;
     private CharacterAnimator anim;
     private ThirdPersonActionCamera actionCamera;
     private CombatConfig runtimeConfig;
@@ -22,6 +23,7 @@ public class CombatController : MonoBehaviour
     private float lastSlideTime = -999f;
     private float slideActiveUntil = -999f;
     private readonly HashSet<CharacterState> hitThisSlide = new HashSet<CharacterState>();
+    private static readonly Collider[] overlapBuffer = new Collider[16];
 
     private CombatConfig Config
     {
@@ -54,6 +56,7 @@ public class CombatController : MonoBehaviour
     {
         state = GetComponent<CharacterState>();
         motor = GetComponent<CharacterMotor>();
+        locomotion = GetComponent<CharacterLocomotion>();
         anim = GetComponent<CharacterAnimator>();
 
         if (Camera.main != null)
@@ -80,6 +83,8 @@ public class CombatController : MonoBehaviour
     {
         if (state != null && state.IsStunned)
             return;
+        if (locomotion != null && locomotion.IsDodging)
+            return;
 
         CombatConfig.PunchSettings punch = Config.Punch;
         if (Time.time - lastPunchTime < punch.cooldown)
@@ -94,16 +99,26 @@ public class CombatController : MonoBehaviour
             anim.PlayPunch();
 
         Vector3 center = transform.position + lockedDirection * punch.range;
-        Collider[] cols = Physics.OverlapSphere(center, punch.radius);
-        foreach (Collider c in cols)
+        int count = Physics.OverlapSphereNonAlloc(center, punch.radius, overlapBuffer);
+        CharacterState nearest = null;
+        float nearestDistanceSq = float.PositiveInfinity;
+        for (int i = 0; i < count; i++)
         {
+            Collider c = overlapBuffer[i];
             CharacterState victim = c.GetComponentInParent<CharacterState>();
-            if (victim != null && victim != state)
+            if (victim == null || victim == state)
+                continue;
+
+            float distanceSq = (victim.transform.position - center).sqrMagnitude;
+            if (distanceSq < nearestDistanceSq)
             {
-                Hit(victim, punch.knockbackForce, punch.hitStunTime);
-                break;
+                nearest = victim;
+                nearestDistanceSq = distanceSq;
             }
         }
+
+        if (nearest != null)
+            Hit(nearest, punch.knockbackForce, punch.hitStunTime);
     }
 
     public void SlideTackle()
@@ -114,6 +129,8 @@ public class CombatController : MonoBehaviour
     public void SlideTackle(Vector3 actionDirection)
     {
         if (state != null && state.IsStunned)
+            return;
+        if (locomotion != null && locomotion.IsDodging)
             return;
 
         CombatConfig.TackleSettings tackle = Config.Tackle;
@@ -141,17 +158,26 @@ public class CombatController : MonoBehaviour
         if (Time.time >= slideActiveUntil)
             return;
 
-        Collider[] cols = Physics.OverlapSphere(transform.position, Config.Tackle.hitRadius);
-        foreach (Collider c in cols)
+        int count = Physics.OverlapSphereNonAlloc(transform.position, Config.Tackle.hitRadius, overlapBuffer);
+        for (int i = 0; i < count; i++)
         {
+            Collider c = overlapBuffer[i];
             CharacterState victim = c.GetComponentInParent<CharacterState>();
             if (victim != null && victim != state && !hitThisSlide.Contains(victim))
             {
                 CombatConfig.TackleSettings tackle = Config.Tackle;
-                hitThisSlide.Add(victim);
-                Hit(victim, tackle.knockbackForce, tackle.hitStunTime);
+                if (Hit(victim, tackle.knockbackForce, tackle.hitStunTime))
+                    hitThisSlide.Add(victim);
             }
         }
+    }
+
+    public void ResetCombatState()
+    {
+        lastPunchTime = -999f;
+        lastSlideTime = -999f;
+        slideActiveUntil = -999f;
+        hitThisSlide.Clear();
     }
 
     public static Vector3 CorrectActionDirectionTowardTarget(
@@ -226,8 +252,14 @@ public class CombatController : MonoBehaviour
         return best;
     }
 
-    private void Hit(CharacterState victim, float knockbackForce, float stunDuration)
+    private bool Hit(CharacterState victim, float knockbackForce, float stunDuration)
     {
+        if (victim.IsInvulnerable)
+        {
+            victim.NotifyEvaded();
+            return false;
+        }
+
         Vector3 dir = victim.transform.position - transform.position;
         dir.y = 0f;
         if (dir.sqrMagnitude < 0.0001f)
@@ -253,5 +285,6 @@ public class CombatController : MonoBehaviour
         }
 
         victim.ApplyHit(dir * knockbackForce, stunDuration);
+        return true;
     }
 }

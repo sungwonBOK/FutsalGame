@@ -13,6 +13,14 @@
 - `PlayerBallHandler` remains the compatibility facade for `CurrentOwner`, `HasBall`, `Shoot`, `ForceRelease`, `ClearPossession`, `IsCharging`, and `ChargeAmount01`.
 - Player-specific initial acquisition, delayed reacquisition, release bookkeeping, and ownership cleanup now live in `BallPossessionController`; charge, shoot, dribble placement, and presentation remain in the facade.
 
+## 2026-07-24 Update
+
+- `CharacterLocomotion` owns stamina, sprint drain/regeneration, dodge timing, and dodge availability; `CharacterMotor` remains responsible for applying the resolved movement and dash velocity.
+- Dodge grants temporary invulnerability through `CharacterState`; combat rejects punch/slide attempts while dodging and ignores hits against an invulnerable target.
+- Ball dribble placement now uses bounded smooth follow and rolling rotation. Shots preserve owner momentum, add force-scaled loft, and receive a short first-touch bonus after possession.
+- `SimpleAIController` predicts free-ball motion, commits to a brief dribble before shooting, defends goal-side when distant, and can dodge an incoming slide.
+- `AbilityCooldownUI` reads `CharacterLocomotion` to render stamina and dodge status alongside the combat cooldowns.
+
 ## 2026-07-19 Update
 
 - Keyboard movement now combines WASD and arrow keys into a single normalized `Vector2` before passing player intent to `CharacterLocomotion`.

@@ -77,10 +77,92 @@ public class CharacterMovementResponsibilityTests
         }
     }
 
+    [Test]
+    public void MovementConfig_UsesGameplayDefaultsWhenLegacyAssetHasNoMobilityValues()
+    {
+        CharacterMovementConfig config = ScriptableObject.CreateInstance<CharacterMovementConfig>();
+
+        try
+        {
+            SetPrivateField(config, "maxStamina", 0f);
+            SetPrivateField(config, "dodgeCost", 0f);
+            SetPrivateField(config, "dodgeDuration", 0f);
+
+            Assert.That(config.MaxStamina, Is.EqualTo(100f));
+            Assert.That(config.DodgeCost, Is.EqualTo(30f));
+            Assert.That(config.DodgeDuration, Is.EqualTo(0.22f));
+        }
+        finally
+        {
+            Object.DestroyImmediate(config);
+        }
+    }
+
+    [Test]
+    public void Locomotion_DodgeConsumesStaminaAndGrantsTemporaryInvulnerability()
+    {
+        GameObject player = new GameObject("Player");
+
+        try
+        {
+            player.AddComponent<Rigidbody>();
+            CharacterState state = player.AddComponent<CharacterState>();
+            CharacterMotor motor = player.AddComponent<CharacterMotor>();
+            CharacterLocomotion locomotion = player.AddComponent<CharacterLocomotion>();
+            InvokePrivate(motor, "Awake");
+            InvokePrivate(locomotion, "Awake");
+
+            bool dodged = locomotion.TryDodge(Vector3.right);
+
+            Assert.That(dodged, Is.True);
+            Assert.That(locomotion.IsDodging, Is.True);
+            Assert.That(locomotion.Stamina01, Is.LessThan(1f));
+            Assert.That(state.IsInvulnerable, Is.True);
+        }
+        finally
+        {
+            Object.DestroyImmediate(player);
+        }
+    }
+
+    [Test]
+    public void Locomotion_ResetMobilityStateRestoresStaminaAndEndsDodge()
+    {
+        GameObject player = new GameObject("Player");
+
+        try
+        {
+            player.AddComponent<Rigidbody>();
+            player.AddComponent<CharacterState>();
+            CharacterMotor motor = player.AddComponent<CharacterMotor>();
+            CharacterLocomotion locomotion = player.AddComponent<CharacterLocomotion>();
+            InvokePrivate(motor, "Awake");
+            InvokePrivate(locomotion, "Awake");
+            locomotion.TryDodge(Vector3.forward);
+
+            locomotion.ResetMobilityState();
+
+            Assert.That(locomotion.Stamina01, Is.EqualTo(1f));
+            Assert.That(locomotion.IsDodging, Is.False);
+            Assert.That(locomotion.CanDodge, Is.True);
+        }
+        finally
+        {
+            Object.DestroyImmediate(player);
+        }
+    }
+
     private static void InvokePrivate(object target, string methodName)
     {
         target.GetType()
             .GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
             .Invoke(target, null);
+    }
+
+    private static void SetPrivateField(object target, string fieldName, object value)
+    {
+        target.GetType()
+            .GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
+            .SetValue(target, value);
     }
 }

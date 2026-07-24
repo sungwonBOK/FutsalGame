@@ -95,10 +95,63 @@ public class CombatBallConfigTests
         }
     }
 
+    [Test]
+    public void BallConfig_ProvidesNewDribbleAndShotTuningDefaults()
+    {
+        BallConfig config = ScriptableObject.CreateInstance<BallConfig>();
+
+        try
+        {
+            Assert.That(config.DribbleMaxFollowLag, Is.EqualTo(0.45f));
+            Assert.That(config.ShotLoftPerForce, Is.EqualTo(0.15f));
+            Assert.That(config.ShotMomentumInherit, Is.EqualTo(0.5f));
+            Assert.That(config.FirstTouchWindow, Is.EqualTo(0.35f));
+            Assert.That(config.FirstTouchBonus, Is.EqualTo(1.3f));
+        }
+        finally
+        {
+            Object.DestroyImmediate(config);
+        }
+    }
+
+    [Test]
+    public void CombatController_RejectsPunchWhileDodging()
+    {
+        GameObject player = new GameObject("Combat Player");
+
+        try
+        {
+            player.AddComponent<Rigidbody>();
+            player.AddComponent<CharacterState>();
+            CharacterMotor motor = player.AddComponent<CharacterMotor>();
+            CharacterLocomotion locomotion = player.AddComponent<CharacterLocomotion>();
+            CombatController combat = player.AddComponent<CombatController>();
+            InvokePrivate(motor, "Awake");
+            InvokePrivate(locomotion, "Awake");
+            InvokePrivate(combat, "Awake");
+            Assert.That(locomotion.TryDodge(Vector3.right), Is.True);
+
+            combat.Punch(Vector3.forward);
+
+            Assert.That(combat.PunchRemaining, Is.EqualTo(0f));
+        }
+        finally
+        {
+            Object.DestroyImmediate(player);
+        }
+    }
+
     private static void SetPrivateField(object target, string fieldName, object value)
     {
         target.GetType()
             .GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
             .SetValue(target, value);
+    }
+
+    private static void InvokePrivate(object target, string methodName)
+    {
+        target.GetType()
+            .GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
+            .Invoke(target, null);
     }
 }

@@ -105,7 +105,36 @@ public class BallController : MonoBehaviour
         if (!HasOwner(owner))
             return;
 
-        transform.position = position;
+        Vector3 current = transform.position;
+        Vector3 next = Vector3.Lerp(current, position, 1f - Mathf.Exp(-Config.DribbleFollowSharpness * Time.deltaTime));
+        Vector3 lag = next - position;
+        if (lag.sqrMagnitude > Config.DribbleMaxFollowLag * Config.DribbleMaxFollowLag)
+            next = position + lag.normalized * Config.DribbleMaxFollowLag;
+
+        RotateForDribbleMotion(next - current);
+        transform.position = next;
+    }
+
+    public void AddReleaseVelocity(Vector3 velocity)
+    {
+        if (CurrentOwner == null && body != null)
+            body.linearVelocity += velocity;
+    }
+
+    public void AddReleaseImpulse(Vector3 impulse)
+    {
+        if (CurrentOwner == null && body != null && impulse.sqrMagnitude > 0.0001f)
+            body.AddForce(impulse, ForceMode.Impulse);
+    }
+
+    private void RotateForDribbleMotion(Vector3 delta)
+    {
+        delta.y = 0f;
+        if (delta.sqrMagnitude < 1e-8f || ballCollider == null) return;
+
+        float radius = Mathf.Max(0.0001f, ballCollider.bounds.extents.x);
+        Vector3 axis = Vector3.Cross(Vector3.up, delta.normalized);
+        transform.rotation = Quaternion.AngleAxis(delta.magnitude / radius * Mathf.Rad2Deg, axis) * transform.rotation;
     }
 
     private void ReleaseCurrentOwner(Vector3 impulse)

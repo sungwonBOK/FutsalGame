@@ -65,6 +65,8 @@ public class PlayerInput : MonoBehaviour
         locomotion.SetPlayerMoveInput(moveInput, moveDirection, sprint, hasBall);
 
         Vector3 actionDirection = locomotion.ActionDirection;
+        if (kb != null && kb.lKey.wasPressedThisFrame)
+            locomotion.TryDodge(actionDirection);
         if (kb != null && kb.jKey.wasPressedThisFrame && combat != null)
             combat.Punch(actionDirection);
         if (kb != null && kb.kKey.wasPressedThisFrame && combat != null)

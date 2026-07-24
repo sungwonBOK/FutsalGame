@@ -18,6 +18,7 @@ public class PlayerBallHandler : MonoBehaviour
 
     private CharacterState state;
     private CharacterAnimator anim;
+    private Rigidbody ownerBody;
     private ThirdPersonActionCamera actionCamera;
     private BallController ball;
     private BallPossessionController possession;
@@ -27,6 +28,7 @@ public class PlayerBallHandler : MonoBehaviour
     public bool HasBall => possession != null && possession.HasBall;
     public bool IsCharging => interaction != null && interaction.IsCharging;
     public float ChargeAmount01 => interaction != null ? interaction.ChargeAmount01(Time.time) : 0f;
+    public bool LastShotWasFirstTouch { get; private set; }
 
     private BallConfig Config
     {
@@ -47,6 +49,7 @@ public class PlayerBallHandler : MonoBehaviour
     {
         state = GetComponent<CharacterState>();
         anim = GetComponent<CharacterAnimator>();
+        ownerBody = GetComponent<Rigidbody>();
 
         if (Camera.main != null)
             actionCamera = Camera.main.GetComponent<ThirdPersonActionCamera>();
@@ -125,7 +128,10 @@ public class PlayerBallHandler : MonoBehaviour
         if (interaction != null && interaction.TryReleaseCharge(Time.time, action, releaseDirection, transform.forward, out impulse))
         {
             if (action == BallChargeAction.Shot)
+            {
                 PlayShotPresentation(CaptureShotDirection(impulse, transform.forward));
+                ApplyShotReleaseModifiers(impulse);
+            }
         }
     }
 
@@ -205,8 +211,11 @@ public class PlayerBallHandler : MonoBehaviour
         if (!HasBall)
             return;
 
+        float resolvedForce = ResolveShotForce(force);
+        Vector3 impulse = direction * resolvedForce;
         PlayShotPresentation(direction);
-        ReleaseWithImpulse(direction * force);
+        ReleaseWithImpulse(impulse);
+        ApplyShotMotion(resolvedForce);
     }
 
     private void PlayShotPresentation(Vector3 direction)
@@ -225,5 +234,35 @@ public class PlayerBallHandler : MonoBehaviour
     private void ReleaseWithImpulse(Vector3 impulse)
     {
         possession.Release(Time.time, impulse);
+    }
+
+    private float ResolveShotForce(float force)
+    {
+        LastShotWasFirstTouch = possession != null && Time.time - possession.LastAcquireTime <= Config.FirstTouchWindow;
+        return LastShotWasFirstTouch ? force * Config.FirstTouchBonus : force;
+    }
+
+    private void ApplyShotReleaseModifiers(Vector3 baseImpulse)
+    {
+        float baseForce = baseImpulse.magnitude;
+        if (baseForce <= 0.0001f) return;
+
+        float resolvedForce = ResolveShotForce(baseForce);
+        if (resolvedForce > baseForce)
+            ball.AddReleaseImpulse(baseImpulse.normalized * (resolvedForce - baseForce));
+        ApplyShotMotion(resolvedForce);
+    }
+
+    private void ApplyShotMotion(float force)
+    {
+        if (ball == null) return;
+
+        ball.AddReleaseImpulse(Vector3.up * (force * Config.ShotLoftPerForce));
+        if (ownerBody != null)
+        {
+            Vector3 inheritedVelocity = ownerBody.linearVelocity;
+            inheritedVelocity.y = 0f;
+            ball.AddReleaseVelocity(inheritedVelocity * Config.ShotMomentumInherit);
+        }
     }
 }

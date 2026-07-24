@@ -27,6 +27,7 @@ public class BallConfig : ScriptableObject
     {
         public Vector3 offset;
         [Min(0f)] public float followSharpness;
+        [Min(0f)] public float maxFollowLag;
         [Min(0f)] public float detachImpulse;
         [Min(0.01f)] public float sprintTouchInterval;
         [Min(0f)] public float sprintTouchForce;
@@ -40,6 +41,7 @@ public class BallConfig : ScriptableObject
         {
             this.offset = offset;
             this.followSharpness = followSharpness;
+            maxFollowLag = 0.45f;
             this.detachImpulse = detachImpulse;
             this.sprintTouchInterval = sprintTouchInterval;
             this.sprintTouchForce = sprintTouchForce;
@@ -69,6 +71,10 @@ public class BallConfig : ScriptableObject
         [Min(0f)] public float maxShootForce;
         [Min(0.01f)] public float maxChargeTime;
         [Min(0f)] public float cooldown;
+        [Min(0f)] public float loftPerForce;
+        [Range(0f, 1f)] public float momentumInherit;
+        [Min(0f)] public float firstTouchWindow;
+        [Min(1f)] public float firstTouchBonus;
 
         public ShotSettings(float minChargeForce, float shootForce, float maxShootForce, float maxChargeTime, float cooldown)
         {
@@ -77,6 +83,10 @@ public class BallConfig : ScriptableObject
             this.maxShootForce = maxShootForce;
             this.maxChargeTime = maxChargeTime;
             this.cooldown = cooldown;
+            loftPerForce = 0.15f;
+            momentumInherit = 0.5f;
+            firstTouchWindow = 0.35f;
+            firstTouchBonus = 1.3f;
         }
     }
 
@@ -107,4 +117,11 @@ public class BallConfig : ScriptableObject
 
     [Header("Physics")]
     public PhysicsSettings Physics = new PhysicsSettings(0f, 0f);
+
+    public float DribbleFollowSharpness => Dribble.followSharpness > 0f ? Dribble.followSharpness : 18f;
+    public float DribbleMaxFollowLag => Dribble.maxFollowLag > 0f ? Dribble.maxFollowLag : 0.45f;
+    public float ShotLoftPerForce => Shot.loftPerForce > 0f ? Shot.loftPerForce : 0.15f;
+    public float ShotMomentumInherit => Shot.momentumInherit > 0f ? Shot.momentumInherit : 0.5f;
+    public float FirstTouchWindow => Shot.firstTouchWindow > 0f ? Shot.firstTouchWindow : 0.35f;
+    public float FirstTouchBonus => Shot.firstTouchBonus > 1f ? Shot.firstTouchBonus : 1.3f;
 }

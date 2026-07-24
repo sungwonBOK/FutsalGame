@@ -22,6 +22,7 @@ public class CharacterMotor : MonoBehaviour
     public Vector3 MoveDirection => moveDirection;
     public bool HasMoveInput => moveDirection.sqrMagnitude > 0.0001f;
     public CharacterMovementProfile ActiveMovementProfile => activeMovementProfile;
+    public bool IsDashing => Time.time < dashUntil;
 
     private void Awake()
     {
@@ -46,6 +47,12 @@ public class CharacterMotor : MonoBehaviour
         dashVelocity = velocity;
         dashVelocity.y = 0f;
         dashUntil = Time.time + duration;
+    }
+
+    public void CancelDash()
+    {
+        dashVelocity = Vector3.zero;
+        dashUntil = -999f;
     }
 
     private void FixedUpdate()

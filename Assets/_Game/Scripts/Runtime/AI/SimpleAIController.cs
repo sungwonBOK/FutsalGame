@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -30,6 +31,18 @@ public class SimpleAIController : MonoBehaviour
     [Header("Ranges / Timing")]
     [Tooltip("슛 사거리: 공격 골까지 이 거리(평면) 안이고 골을 바라보면 슛한다.")]
     [SerializeField] private float shootRange = 8f;
+    [SerializeField] private float dribbleCommitTime = 0.6f;
+    [SerializeField] private float interceptLeadTime = 0.35f;
+    [SerializeField] private float goalAimSpread = 1.1f;
+
+    [Header("Sprint / Dodge")]
+    [SerializeField] private float sprintDistance = 5f;
+    [SerializeField] private float dodgeThreatRange = 3.2f;
+    [SerializeField, Range(0f, 1f)] private float dodgeReactionChance = 0.65f;
+
+    [Header("Defense")]
+    [SerializeField] private float engageDistance = 4.5f;
+    [SerializeField] private float goalSideOffset = 2.2f;
     [Tooltip("태클 시도 거리: 공 가진 플레이어와 이 거리(평면) 안이면 슬라이딩을 시도한다.")]
     [SerializeField] private float tackleRange = 1.8f;
     [Tooltip("이 거리보다 더 가까우면 슬라이딩 대신 펀치를 쓴다.")]
@@ -48,6 +61,11 @@ public class SimpleAIController : MonoBehaviour
 
     private AIState current = AIState.Idle;
     private float nextDecisionTime;
+    private CombatController[] opponents;
+    private float possessionStartTime;
+    private Vector3 aimPoint;
+    private bool hadBallLastFrame;
+    private bool wasThreatened;
 
     /// <summary>현재 AI 상태 (디버그/확인용).</summary>
     public AIState CurrentState => current;
@@ -69,23 +87,40 @@ public class SimpleAIController : MonoBehaviour
         }
         if (attackGoal == null)
             Debug.LogWarning("[SimpleAIController] Attack Goal이 지정되지 않았습니다. Inspector에서 지정하세요.", this);
+        CacheOpponents();
+    }
+
+    private void CacheOpponents()
+    {
+        CombatController[] all = FindObjectsByType<CombatController>(FindObjectsInactive.Exclude);
+        List<CombatController> others = new List<CombatController>(all.Length);
+        foreach (CombatController candidate in all)
+        {
+            if (candidate != combat)
+                others.Add(candidate);
+        }
+
+        opponents = others.ToArray();
     }
 
     private void Update()
     {
+        TrackPossessionChange();
         // 킥오프 대기/경기 종료 중엔 판단/행동 정지.
         if (!GameManager.PlayActive)
         {
-            locomotion.SetMoveInput(Vector3.zero);
+            StopMoving();
             return;
         }
 
         // 기절 중이면 아무 판단/행동도 하지 않는다 (이동 정지).
         if (state.IsStunned)
         {
-            locomotion.SetMoveInput(Vector3.zero);
+            StopMoving();
             return;
         }
+
+        ReactToIncomingTackle();
 
         // 주기적으로 상태 재평가.
         if (Time.time >= nextDecisionTime)
@@ -99,7 +134,7 @@ public class SimpleAIController : MonoBehaviour
             case AIState.ChaseBall: DoChaseBall(); break;
             case AIState.Attack:    DoAttack();    break;
             case AIState.Defend:    DoDefend();    break;
-            default:                locomotion.SetMoveInput(Vector3.zero); break;
+            default:                StopMoving(); break;
         }
     }
 
@@ -116,16 +151,19 @@ public class SimpleAIController : MonoBehaviour
 
     private void DoChaseBall()
     {
-        if (ball == null) { locomotion.SetMoveInput(Vector3.zero); return; }
-        MoveToward(ball.position); // 가까워지면 PlayerBallHandler가 자동으로 소유
+        if (ball == null) { StopMoving(); return; }
+        MoveToward(ball.position + ball.linearVelocity * interceptLeadTime);
     }
 
     private void DoAttack()
     {
-        if (attackGoal == null) { locomotion.SetMoveInput(Vector3.zero); return; }
+        if (attackGoal == null) { StopMoving(); return; }
 
-        Vector3 goalPos = attackGoal.position;
+        Vector3 goalPos = aimPoint;
         MoveToward(goalPos); // 골 방향으로 드리블 (motor가 그 방향을 바라보게 회전)
+
+        if (Time.time - possessionStartTime < dribbleCommitTime)
+            return;
 
         // 사거리 안 + 골을 바라보면 슛.
         if (PlanarDistance(transform.position, goalPos) <= shootRange)
@@ -143,12 +181,11 @@ public class SimpleAIController : MonoBehaviour
     private void DoDefend()
     {
         PlayerBallHandler owner = PlayerBallHandler.CurrentOwner;
-        if (owner == null) { locomotion.SetMoveInput(Vector3.zero); return; }
+        if (owner == null) { StopMoving(); return; }
 
         Vector3 targetPos = owner.transform.position;
-        MoveToward(targetPos); // 공 가진 플레이어에게 접근
-
         float dist = PlanarDistance(transform.position, targetPos);
+        MoveToward(dist > engageDistance ? GoalSideInterceptPoint(targetPos) : targetPos);
         if (dist <= tackleRange)
         {
             // 아주 가까우면 펀치, 조금 멀면 슬라이딩. 쿨다운은 각 기능이 내부에서 존중.
@@ -162,16 +199,107 @@ public class SimpleAIController : MonoBehaviour
     // --- 유틸 ---
 
     /// <summary>목표 지점을 향해 이동 방향을 준다(부드럽게 직진). 도착 거리 안이면 정지.</summary>
+    private void TrackPossessionChange()
+    {
+        bool hasBall = handler != null && handler.HasBall;
+        if (hasBall && !hadBallLastFrame)
+        {
+            possessionStartTime = Time.time;
+            aimPoint = PickAimPoint();
+        }
+
+        hadBallLastFrame = hasBall;
+    }
+
+    private void ReactToIncomingTackle()
+    {
+        CombatController threat = FindIncomingTackle();
+        bool threatened = threat != null;
+        if (threatened && !wasThreatened && locomotion.CanDodge && Random.value <= dodgeReactionChance)
+            locomotion.TryDodge(ChooseDodgeDirection(threat.transform.position));
+
+        wasThreatened = threatened;
+    }
+
+    private CombatController FindIncomingTackle()
+    {
+        if (opponents == null)
+            CacheOpponents();
+
+        for (int i = 0; i < opponents.Length; i++)
+        {
+            CombatController opponent = opponents[i];
+            if (opponent == null || !opponent.IsSliding)
+                continue;
+
+            Vector3 toSelf = transform.position - opponent.transform.position;
+            toSelf.y = 0f;
+            if (toSelf.magnitude > dodgeThreatRange)
+                continue;
+
+            if (toSelf.sqrMagnitude > 0.0001f && Vector3.Dot(opponent.transform.forward, toSelf.normalized) >= 0.4f)
+                return opponent;
+        }
+
+        return null;
+    }
+
+    private Vector3 ChooseDodgeDirection(Vector3 threatPosition)
+    {
+        Vector3 awayFromThreat = transform.position - threatPosition;
+        awayFromThreat.y = 0f;
+        if (awayFromThreat.sqrMagnitude < 0.0001f)
+            return -transform.forward;
+
+        Vector3 side = Vector3.Cross(Vector3.up, awayFromThreat.normalized);
+        Vector3 preferred = (handler.HasBall ? aimPoint : Vector3.zero) - transform.position;
+        preferred.y = 0f;
+        return Vector3.Dot(side, preferred) >= 0f ? side : -side;
+    }
+
+    private Vector3 GoalSideInterceptPoint(Vector3 carrierPosition)
+    {
+        if (ownGoal == null)
+            return carrierPosition;
+
+        Vector3 toOwnGoal = ownGoal.position - carrierPosition;
+        toOwnGoal.y = 0f;
+        return toOwnGoal.sqrMagnitude > 0.0001f
+            ? carrierPosition + toOwnGoal.normalized * goalSideOffset
+            : carrierPosition;
+    }
+
+    private Vector3 PickAimPoint()
+    {
+        if (attackGoal == null)
+            return transform.position;
+
+        Vector3 point = attackGoal.position;
+        point.z += Random.Range(-goalAimSpread, goalAimSpread);
+        return point;
+    }
+
+    private void StopMoving()
+    {
+        locomotion.SetPlayerMoveInput(Vector2.zero, Vector3.zero, sprint: false, hasBall: false);
+    }
+
     private void MoveToward(Vector3 targetPos)
     {
         Vector3 dir = targetPos - transform.position;
         dir.y = 0f;
-        if (dir.magnitude <= arriveDistance)
+        float distance = dir.magnitude;
+        if (distance <= arriveDistance)
         {
-            locomotion.SetMoveInput(Vector3.zero);
+            StopMoving();
             return;
         }
-        locomotion.SetMoveInput(dir.normalized);
+
+        locomotion.SetPlayerMoveInput(
+            Vector2.zero,
+            dir / distance,
+            sprint: distance > sprintDistance,
+            hasBall: handler != null && handler.HasBall);
     }
 
     private static float PlanarDistance(Vector3 a, Vector3 b)

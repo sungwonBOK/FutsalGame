@@ -10,9 +10,12 @@ public class CharacterState : MonoBehaviour
 {
     private Rigidbody rb;
     private float stunUntil = -999f;
+    private float invulnerableUntil = -999f;
 
     /// <summary>현재 기절 중인가.</summary>
     public bool IsStunned { get; private set; }
+    public bool IsInvulnerable => Time.time < invulnerableUntil;
+    public float LastEvadeTime { get; private set; } = -999f;
 
     private void Awake()
     {
@@ -37,11 +40,22 @@ public class CharacterState : MonoBehaviour
         rb.AddForce(knockbackImpulse, ForceMode.Impulse);
     }
 
+    public void SetInvulnerable(float duration)
+    {
+        invulnerableUntil = Mathf.Max(invulnerableUntil, Time.time + Mathf.Max(0f, duration));
+    }
+
+    public void NotifyEvaded()
+    {
+        LastEvadeTime = Time.time;
+    }
+
     /// <summary>기절 등 상태를 초기화한다(킥오프 리셋용).</summary>
     public void ResetState()
     {
         IsStunned = false;
         stunUntil = -999f;
+        invulnerableUntil = -999f;
     }
 
 }

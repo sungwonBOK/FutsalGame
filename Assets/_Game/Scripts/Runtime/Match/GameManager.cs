@@ -47,6 +47,11 @@ public class GameManager : MonoBehaviour
     [Tooltip("득점 후 공이 네트로 날아가 펄럭이도록 공 리셋을 지연하는 시간(초). 캐릭터는 즉시 리셋.")]
     [SerializeField] private float netCelebrationDelay = 0.7f;
 
+    [Header("Ball Safety Net")]
+    [SerializeField] private Vector2 ballBoundsHalfExtents = new Vector2(22f, 13f);
+    [SerializeField] private float ballMinHeight = -3f;
+    [SerializeField] private float ballMaxHeight = 25f;
+
     [Header("Effects")]
     [Tooltip("득점 축하 파티클 프리팹 (득점 팀 색으로 tint).")]
     [SerializeField] private GameObject goalEffectPrefab;
@@ -68,6 +73,7 @@ public class GameManager : MonoBehaviour
     private Vector3 ballStart, playerStart, opponentStart;
     private Quaternion playerStartRot, opponentStartRot;
     private Collider ballCollider;
+    private ThirdPersonActionCamera actionCamera;
     private bool scoringLocked; // 한 골에 대한 중복 처리 방지
 
     private void Awake()
@@ -84,6 +90,7 @@ public class GameManager : MonoBehaviour
             if (b != null) ball = b.GetComponent<Rigidbody>();
         }
         if (ball != null) ballCollider = ball.GetComponent<Collider>();
+        if (Camera.main != null) actionCamera = Camera.main.GetComponent<ThirdPersonActionCamera>();
     }
 
     private void Start()
@@ -117,13 +124,14 @@ public class GameManager : MonoBehaviour
         if (State == MatchState.GameOver && !IsPaused &&
             (kb.rKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame))
         {
-            StartCoroutine(NewMatchRoutine());
+            BeginMatch();
             return;
         }
 
         // 경기 시간은 Playing 중에만 흐른다. (일시정지 시 timeScale=0이라 deltaTime=0이지만 상태로도 이중 차단.)
         if (State == MatchState.Playing && !IsPaused)
         {
+            EnforceBallBounds();
             TimeRemaining -= Time.deltaTime;
             if (TimeRemaining <= 0f)
             {
@@ -208,6 +216,7 @@ public class GameManager : MonoBehaviour
             }
         }
         if (AudioManager.Instance != null) AudioManager.Instance.PlayGoal();
+        if (actionCamera != null) actionCamera.AddShake(0.35f);
 
         bool matchPoint = targetScore > 0 && (PlayerScore >= targetScore || OpponentScore >= targetScore);
         StartCoroutine(GoalRoutine(matchPoint));
@@ -269,6 +278,22 @@ public class GameManager : MonoBehaviour
         }
     }
 
+    private void EnforceBallBounds()
+    {
+        if (ball == null || PlayerBallHandler.CurrentOwner != null)
+            return;
+
+        Vector3 position = ball.position;
+        bool outside =
+            Mathf.Abs(position.x) > ballBoundsHalfExtents.x ||
+            Mathf.Abs(position.z) > ballBoundsHalfExtents.y ||
+            position.y < ballMinHeight ||
+            position.y > ballMaxHeight;
+
+        if (outside)
+            ResetBall();
+    }
+
     /// <summary>플레이어와 AI를 시작 위치로 되돌린다.</summary>
     private void ResetCharacters()
     {
@@ -291,6 +316,12 @@ public class GameManager : MonoBehaviour
 
         CharacterState cs = t.GetComponent<CharacterState>();
         if (cs != null) cs.ResetState(); // 기절 등 초기화
+
+        CharacterLocomotion locomotion = t.GetComponent<CharacterLocomotion>();
+        if (locomotion != null) locomotion.ResetMobilityState();
+
+        CombatController combat = t.GetComponent<CombatController>();
+        if (combat != null) combat.ResetCombatState();
     }
 
     private void OnDestroy()
