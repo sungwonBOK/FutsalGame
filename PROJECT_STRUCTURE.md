@@ -101,6 +101,8 @@ Assets/
   - 사람 플레이어 입력 처리
   - `GameplayInputReader`는 `Settings/InputSystem_Actions.inputactions`의 기본 키 바인딩을 의미 단위 입력과 pressed/held/released 상태로 변환한다.
   - `PlayerInput`, `GameManager`, `CameraViewSwitcher`, `ViewHintUI`는 키코드가 아닌 `GameplayInputAction`만 읽는다. 추후 재지정과 저장은 Input 폴더의 override/persistence 서비스로 추가한다.
+  - `ContextualPlayerActionRouter`는 공 소유 상태에 따라 의미 입력을 게임 행동으로 선택한다. `PlayerInput`은 이동·질주 입력과 라우터 호출만 유지한다.
+  - Alt 원터치 준비의 상태와 실행은 Ball 도메인의 `OneTouchIntentBuffer`와 `OneTouchActionExecutor`가 담당한다.
 
 - `Camera/`
   - Futsal 전용 카메라 정책과 Cinemachine backend adapter

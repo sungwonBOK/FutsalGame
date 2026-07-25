@@ -8,6 +8,8 @@
 
 **Tech Stack:** Unity 6000.5.3f1, Unity Input System, C#, Unity Test Framework, Unity MCP.
 
+**Implementation note (2026-07-26):** The user requested short automated coverage. Buffer/input-contract/router-boundary tests were added and passed; with-ball presentation and Play Mode feel remain manual checks instead of a large scene fixture.
+
 ## Global Constraints
 
 - Modify the Input Action asset only through Unity Editor/MCP; never edit its YAML directly.

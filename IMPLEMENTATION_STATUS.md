@@ -21,6 +21,14 @@
 - Verified in Unity EditMode: the full suite `56/56` passed, including actual arrow-key movement and right-Shift press/hold/release through the Input System test device.
 - Manual Play Mode follow-up remains: confirm pause, camera-toggle hint/toggle, movement/actions, and no missing-reference messages using the active scene reader.
 
+## 2026-07-26 Contextual player actions
+
+- `InputSystem_Actions.inputactions` now exposes context-neutral `PrimaryAction`, `SecondaryAction`, one-touch Alt composites, `CancelAction`, `ContextQ`, `Grab`, `ContextF`, and Space `Dodge`. The retained WASD/arrow and both Shift bindings remain rebindable defaults.
+- `GameplayInputReader` suppresses Primary/Secondary while their Alt one-touch composite is active, so action routing never receives the same click as both a direct and prepared action.
+- `PlayerInput` keeps movement and sprint input only. `ContextualPlayerActionRouter` chooses pass-charge versus punch from ball possession, keeps secondary-without-ball/Q/E/F deferred, and clears pending state through `C`, disable, and match reset.
+- `OneTouchIntentBuffer` retains the latest prepared pass or shot. `OneTouchActionExecutor` immediately executes it with possession, whiffs with only the existing shoot animation without possession, and consumes it only after a successful with-ball action.
+- Verified in Unity EditMode: focused contextual-input regression tests and the full `60/60` suite passed. Manual Play Mode confirmation remains for no-ball whiff presentation and automatic prepared-action consumption after later possession.
+
 ## 2026-07-24 Update
 
 - `CharacterLocomotion` owns stamina, sprint drain/regeneration, dodge timing, and dodge availability; `CharacterMotor` remains responsible for applying the resolved movement and dash velocity.
