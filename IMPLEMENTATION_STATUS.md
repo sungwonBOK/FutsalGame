@@ -13,6 +13,13 @@
 - `PlayerBallHandler` remains the compatibility facade for `CurrentOwner`, `HasBall`, `Shoot`, `ForceRelease`, `ClearPossession`, `IsCharging`, and `ChargeAmount01`.
 - Player-specific initial acquisition, delayed reacquisition, release bookkeeping, and ownership cleanup now live in `BallPossessionController`; charge, shoot, dribble placement, and presentation remain in the facade.
 
+## 2026-07-25 Unified input scene wiring
+
+- `SampleScene` uses the single `GameplayInputReader` on `Player`, backed by `Assets/_Game/Settings/InputSystem_Actions.inputactions`.
+- `PlayerInput`, `GameManager`, `CameraViewSwitcher`, and `ViewHintUI` all reference that same scene reader; no second reader or legacy action-binding reference is introduced.
+- Verified in Unity EditMode: focused input tests `9/9` and the full suite `52/52` passed. Unity MCP's editor-state cache reported stale after the run, so `TestResults.xml` was also checked directly (`52/52`, failed `0`).
+- Manual Play Mode follow-up remains: confirm pause, camera-toggle hint/toggle, movement/actions, and no missing-reference messages using the active scene reader.
+
 ## 2026-07-24 Update
 
 - `CharacterLocomotion` owns stamina, sprint drain/regeneration, dodge timing, and dodge availability; `CharacterMotor` remains responsible for applying the resolved movement and dash velocity.
