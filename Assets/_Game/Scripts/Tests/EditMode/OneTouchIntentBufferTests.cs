@@ -28,4 +28,17 @@ public class OneTouchIntentBufferTests
 
         Assert.That(buffer.Intent, Is.EqualTo(OneTouchIntent.None));
     }
+
+    [Test]
+    public void ExecuteQueued_WithoutAHandler_KeepsTheIntentPrepared()
+    {
+        var buffer = new OneTouchIntentBuffer();
+        var executor = new OneTouchActionExecutor();
+        buffer.Queue(OneTouchIntent.Pass);
+
+        bool executed = executor.TryExecuteQueued(buffer, null, UnityEngine.Vector3.forward);
+
+        Assert.That(executed, Is.False);
+        Assert.That(buffer.Intent, Is.EqualTo(OneTouchIntent.Pass));
+    }
 }

@@ -149,11 +149,39 @@ public class PlayerBallHandler : MonoBehaviour
 
     public void Pass(Vector3 actionDirection)
     {
-        if (interaction == null)
-            return;
+        TryPass(actionDirection);
+    }
+
+    public bool TryPerformOneTouch(OneTouchIntent intent, Vector3 actionDirection)
+    {
+        if (!HasBall)
+            return false;
+
+        switch (intent)
+        {
+            case OneTouchIntent.Pass:
+                return TryPass(actionDirection);
+            case OneTouchIntent.Shot:
+                Shoot(actionDirection);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    public void PlayOneTouchWhiff()
+    {
+        if (anim != null)
+            anim.PlayShoot();
+    }
+
+    private bool TryPass(Vector3 actionDirection)
+    {
+        if (!HasBall || interaction == null)
+            return false;
 
         Vector3 impulse;
-        interaction.TryPass(Time.time, actionDirection, transform.forward, out impulse);
+        return interaction.TryPass(Time.time, actionDirection, transform.forward, out impulse);
     }
 
     public void ForceRelease(Vector3 impulse)
