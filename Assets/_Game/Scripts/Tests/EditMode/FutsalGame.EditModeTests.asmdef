@@ -2,7 +2,9 @@
   "name": "FutsalGame.EditModeTests",
   "rootNamespace": "",
   "references": [
-    "FutsalGame.Runtime"
+    "FutsalGame.Runtime",
+    "Unity.InputSystem",
+    "Unity.InputSystem.TestFramework"
   ],
   "includePlatforms": [
     "Editor"

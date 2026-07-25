@@ -3,7 +3,7 @@ using UnityEngine.UI;
 
 /// <summary>
 /// 화면 좌하단에 현재 시점 전환 바인딩과 현재 시점을 표시한다.
-/// 로직은 갖지 않고 CameraViewSwitcher의 공개 상태(IsThirdPerson)만 읽어 그린다.
+/// 로직은 갖지 않고 CameraViewSwitcher의 공개 상태(IsThirdPerson)만 읽어 액션/레거시 시점을 표시한다.
 /// (AbilityCooldownUI와 같은 이유로 계층을 코드로 만든다 — 씬 YAML을 건드리지 않는다.)
 /// </summary>
 public class ViewHintUI : MonoBehaviour
@@ -40,7 +40,7 @@ public class ViewHintUI : MonoBehaviour
         string binding = inputReader != null
             ? inputReader.GetBindingDisplayString(GameplayInputAction.ToggleLegacyCamera)
             : string.Empty;
-        label.text = binding + ": 시점 전환  —  현재: " + (switcher.IsThirdPerson ? "3인칭" : "기본");
+        label.text = binding + ": 시점 전환  —  현재: " + (switcher.IsThirdPerson ? "레거시" : "액션");
     }
 
     private void Build()

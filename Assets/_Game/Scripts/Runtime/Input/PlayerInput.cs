@@ -20,6 +20,9 @@ public class PlayerInput : MonoBehaviour
         ball = GetComponent<PlayerBallHandler>();
         state = GetComponent<CharacterState>();
 
+        if (inputReader == null)
+            inputReader = FindAnyObjectByType<GameplayInputReader>();
+
         if (movementReference == null && Camera.main != null)
             movementReference = Camera.main.transform;
     }

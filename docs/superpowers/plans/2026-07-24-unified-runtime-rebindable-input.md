@@ -27,10 +27,10 @@
 
 **Interfaces:**
 - Produces: `GameplayInputAction` enum values `Move`, `Sprint`, `Pass`, `Shot`, `CancelCharge`, `Dodge`, `Punch`, `SlideTackle`, `Pause`, `Restart`, and `ToggleLegacyCamera`.
-- Produces: `GameplayInputReader.ReadButton(GameplayInputAction action)`, `ReadMove()`, and `GetBindingDisplayString(GameplayInputAction action)`.
+- Produces: `GameplayInputButtonState` plus `GameplayInputReader.ReadButton(GameplayInputAction action)`, `ReadMove()`, and `GetBindingDisplayString(GameplayInputAction action)`.
 - Consumes: a serialized `InputActionAsset` with a `Player` map.
 
-- [ ] **Step 1: Write the failing reader-contract test**
+- [x] **Step 1: Write the failing reader-contract test**
 
 ```csharp
 [Test]
@@ -47,31 +47,38 @@ public void BindingDisplayString_UsesTheActionOverrideWhenPresent()
 }
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: Unity EditMode `GameplayInputReaderTests.BindingDisplayString_UsesTheActionOverrideWhenPresent`.
 
 Expected: compile failure because `GameplayInputReader` and `GameplayInputAction` do not exist.
 
-- [ ] **Step 3: Implement the minimal input boundary**
+- [x] **Step 3: Implement the minimal input boundary**
 
 ```csharp
 public enum GameplayInputAction { Move, Sprint, Pass, Shot, CancelCharge, Dodge, Punch, SlideTackle, Pause, Restart, ToggleLegacyCamera }
 
-public ActionButtonState ReadButton(GameplayInputAction action);
+public readonly struct GameplayInputButtonState
+{
+    public bool WasPressed { get; }
+    public bool IsPressed { get; }
+    public bool WasReleased { get; }
+}
+
+public GameplayInputButtonState ReadButton(GameplayInputAction action);
 public Vector2 ReadMove();
 public string GetBindingDisplayString(GameplayInputAction action);
 ```
 
 Resolve each enum value through one private action-name map, return neutral states for a missing map/action, and enable/disable only the reader's `Player` map.
 
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [x] **Step 4: Run the focused test and verify GREEN**
 
 Run: Unity EditMode `GameplayInputReaderTests`.
 
 Expected: PASS, including neutral-state and display-override assertions.
 
-- [ ] **Step 5: Commit the reader boundary**
+- [x] **Step 5: Commit the reader boundary**
 
 ```powershell
 git add Assets/_Game/Scripts/Runtime/Input/GameplayInputAction.cs Assets/_Game/Scripts/Runtime/Input/GameplayInputReader.cs Assets/_Game/Scripts/Tests/EditMode/GameplayInputReaderTests.cs
@@ -88,7 +95,7 @@ git commit -m "feat: add gameplay input reader"
 - Consumes: the `GameplayInputAction` names from Task 1.
 - Produces: the `Player` map actions used by every consumer.
 
-- [ ] **Step 1: Extend the failing binding-contract test**
+- [x] **Step 1: Extend the failing binding-contract test**
 
 ```csharp
 AssertActionBindings(asset, "Move", "<Keyboard>/w", "<Keyboard>/upArrow", "<Keyboard>/a", "<Keyboard>/leftArrow", "<Keyboard>/s", "<Keyboard>/downArrow", "<Keyboard>/d", "<Keyboard>/rightArrow");
@@ -104,23 +111,23 @@ AssertActionBindings(asset, "Restart", "<Keyboard>/r", "<Keyboard>/space");
 AssertActionBindings(asset, "ToggleLegacyCamera", "<Keyboard>/f5");
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: Unity EditMode `GameplayInputReaderTests`.
 
 Expected: FAIL because the newly named actions/bindings are absent or `Sprint` lacks right Shift.
 
-- [ ] **Step 3: Update the action asset through Unity Editor/MCP**
+- [x] **Step 3: Update the action asset through Unity Editor/MCP**
 
 In the existing `Player` map, retain and configure `Move` as the current keyboard composite plus arrow alternatives; add the missing right-Shift sprint binding; add `Pass`, `Shot`, `CancelCharge`, `Dodge`, `Punch`, `SlideTackle`, `Pause`, `Restart`, and `ToggleLegacyCamera` with exactly the bindings listed in Step 1. Do not delete the existing generic actions.
 
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [x] **Step 4: Run the focused test and verify GREEN**
 
 Run: Unity EditMode `GameplayInputReaderTests`.
 
 Expected: PASS with every default binding present.
 
-- [ ] **Step 5: Commit the input asset contract**
+- [x] **Step 5: Commit the input asset contract**
 
 ```powershell
 git add Assets/_Game/Settings/InputSystem_Actions.inputactions Assets/_Game/Settings/InputSystem_Actions.inputactions.meta Assets/_Game/Scripts/Tests/EditMode/GameplayInputReaderTests.cs
@@ -140,7 +147,7 @@ git commit -m "feat: define gameplay input actions"
 - Consumes: `GameplayInputReader.ReadMove()` and `ReadButton(GameplayInputAction action)` from Task 1.
 - Produces: unchanged calls to `CharacterLocomotion`, `PlayerBallHandler`, and `CombatController`.
 
-- [ ] **Step 1: Replace the legacy test with a failing semantic-routing test**
+- [x] **Step 1: Replace the legacy test with a failing semantic-routing test**
 
 ```csharp
 [Test]
@@ -152,29 +159,29 @@ public void PlayerInput_UsesMoveAndSprintActionsInsteadOfRawKeyboardControls()
 }
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: Unity EditMode `PlayerActionInputReaderTests`.
 
 Expected: FAIL because `PlayerInput` still reads keyboard and legacy bindings.
 
-- [ ] **Step 3: Implement minimal semantic routing**
+- [x] **Step 3: Implement minimal semantic routing**
 
 ```csharp
 Vector2 moveInput = inputReader.ReadMove();
 bool sprint = inputReader.ReadButton(GameplayInputAction.Sprint).IsPressed;
-ActionButtonState pass = inputReader.ReadButton(GameplayInputAction.Pass);
+GameplayInputButtonState pass = inputReader.ReadButton(GameplayInputAction.Pass);
 ```
 
 Use the reader for `Move`, sprint, dodge, punch, slide, pass, shot, and cancel. Preserve the current `GameManager.PlayActive`, stun, charge-release, action-direction, and camera-relative movement logic. Remove raw `Keyboard`/`Mouse` use and the legacy binding asset reader only after the replacement compiles.
 
-- [ ] **Step 4: Run focused input and existing movement/ball tests**
+- [x] **Step 4: Run focused input and existing movement/ball tests**
 
 Run: Unity EditMode `PlayerActionInputReaderTests`, `CameraInputDirectionTests`, and `BallInteractionControllerTests`.
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit player migration**
+- [x] **Step 5: Commit player migration**
 
 ```powershell
 git add Assets/_Game/Scripts/Runtime/Input/PlayerInput.cs Assets/_Game/Scripts/Runtime/Input Assets/_Game/Scripts/Tests/EditMode
@@ -193,7 +200,7 @@ git commit -m "refactor: route player controls through input actions"
 - Consumes: a serialized `GameplayInputReader` reference and its semantic button states.
 - Produces: unchanged pause, restart, camera-toggle, and hint behavior.
 
-- [ ] **Step 1: Write failing consumer-routing checks**
+- [x] **Step 1: Write failing consumer-routing checks**
 
 ```csharp
 Assert.That(File.ReadAllText(GameManagerPath), Does.Contain("GameplayInputAction.Pause"));
@@ -201,13 +208,13 @@ Assert.That(File.ReadAllText(CameraSwitcherPath), Does.Contain("GameplayInputAct
 Assert.That(File.ReadAllText(ViewHintPath), Does.Contain("GetBindingDisplayString"));
 ```
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: Unity EditMode `MatchResetTests` and the routing checks.
 
 Expected: FAIL because each consumer still reads a raw key or embeds `F5`.
 
-- [ ] **Step 3: Implement consumer routing**
+- [x] **Step 3: Implement consumer routing**
 
 ```csharp
 if (inputReader.ReadButton(GameplayInputAction.Pause).WasPressed)
@@ -219,13 +226,13 @@ if (inputReader.ReadButton(GameplayInputAction.ToggleLegacyCamera).WasPressed)
 
 Keep pause/restart readable outside active gameplay. Replace the visible fixed `F5` text with `inputReader.GetBindingDisplayString(GameplayInputAction.ToggleLegacyCamera)`.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run: Unity EditMode `MatchResetTests`, input routing checks, and `ThirdPersonActionCameraTests`.
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit global-consumer migration**
+- [x] **Step 5: Commit global-consumer migration**
 
 ```powershell
 git add Assets/_Game/Scripts/Runtime/Match/GameManager.cs Assets/_Game/Scripts/Runtime/Camera/CameraViewSwitcher.cs Assets/_Game/Scripts/Runtime/UI/ViewHintUI.cs Assets/_Game/Scripts/Tests/EditMode
@@ -242,31 +249,31 @@ git commit -m "refactor: route global controls through input actions"
 - Consumes: the action asset and `GameplayInputReader` from Tasks 1-4.
 - Produces: assigned reader references on PlayerInput, GameManager, CameraViewSwitcher, and ViewHintUI.
 
-- [ ] **Step 1: Inspect before scene mutation**
+- [x] **Step 1: Inspect before scene mutation**
 
 Use Unity MCP to verify the active `SampleScene`, the Player, GameManager, Main Camera, and UI host components, then confirm the editor is idle.
 
-- [ ] **Step 2: Assign references through Unity Editor/MCP**
+- [x] **Step 2: Assign references through Unity Editor/MCP**
 
 Add `GameplayInputReader` to the selected scene input host, assign `InputSystem_Actions.inputactions`, and set the same reader reference on PlayerInput, GameManager, CameraViewSwitcher, and ViewHintUI. Remove the obsolete PlayerActionBindings reference only after all references resolve.
 
-- [ ] **Step 3: Wait for compilation and check the console**
+- [x] **Step 3: Wait for compilation and check the console**
 
 Poll `mcpforunity://editor/state` until compilation and domain reload complete, then query Unity console errors and warnings.
 
 Expected: no compile errors.
 
-- [ ] **Step 4: Run concise automated verification**
+- [x] **Step 4: Run concise automated verification**
 
 Run: focused input tests, then the full Unity EditMode suite.
 
 Expected: all discovered EditMode tests pass.
 
-- [ ] **Step 5: Review and document**
+- [x] **Step 5: Review and document**
 
 Run `git diff --check`, inspect the changed-file list, and update `IMPLEMENTATION_STATUS.md` with the action-asset/reader boundary and test result. Post the actual file scope, verification, manual Play Mode checklist, and risks to issue #1, with coordinated notes for issues #2, #3, #4, #5, and #7.
 
-- [ ] **Step 6: Commit the scene wiring and status**
+- [x] **Step 6: Commit the scene wiring and status**
 
 ```powershell
 git add Assets/_Game/Scenes/SampleScene.unity IMPLEMENTATION_STATUS.md

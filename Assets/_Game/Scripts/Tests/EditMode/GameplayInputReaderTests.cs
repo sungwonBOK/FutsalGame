@@ -5,6 +5,7 @@ using System.Reflection;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class GameplayInputReaderTests
 {
@@ -180,5 +181,87 @@ public class GameplayInputReaderTests
     {
         UnityEngine.Object.DestroyImmediate(reader.gameObject);
         UnityEngine.Object.DestroyImmediate(asset);
+    }
+}
+
+public class GameplayInputReaderDeviceTests : InputTestFixture
+{
+    private const string InputActionsAssetPath = "Assets/_Game/Settings/InputSystem_Actions.inputactions";
+
+    [Test]
+    public void ReadMove_ReturnsValueFromArrowKeyAlternativeBinding()
+    {
+        Keyboard keyboard = InputSystem.AddDevice<Keyboard>();
+        GameplayInputReader reader = CreateReader(out InputActionAsset runtimeAsset);
+
+        try
+        {
+            Press(keyboard.rightArrowKey);
+
+            Assert.That(reader.ReadMove(), Is.EqualTo(Vector2.right));
+        }
+        finally
+        {
+            DestroyReaderAndAsset(reader, runtimeAsset);
+        }
+    }
+
+    [Test]
+    public void ReadButton_ReportsRightShiftPressHoldAndRelease()
+    {
+        Keyboard keyboard = InputSystem.AddDevice<Keyboard>();
+        GameplayInputReader reader = CreateReader(out InputActionAsset runtimeAsset);
+
+        try
+        {
+            Press(keyboard.rightShiftKey);
+            GameplayInputButtonState pressed = reader.ReadButton(GameplayInputAction.Sprint);
+
+            InputSystem.Update();
+            GameplayInputButtonState held = reader.ReadButton(GameplayInputAction.Sprint);
+
+            Release(keyboard.rightShiftKey);
+            GameplayInputButtonState released = reader.ReadButton(GameplayInputAction.Sprint);
+
+            Assert.That(pressed.WasPressed, Is.True);
+            Assert.That(pressed.IsPressed, Is.True);
+            Assert.That(pressed.WasReleased, Is.False);
+            Assert.That(held.WasPressed, Is.False);
+            Assert.That(held.IsPressed, Is.True);
+            Assert.That(held.WasReleased, Is.False);
+            Assert.That(released.WasPressed, Is.False);
+            Assert.That(released.IsPressed, Is.False);
+            Assert.That(released.WasReleased, Is.True);
+        }
+        finally
+        {
+            DestroyReaderAndAsset(reader, runtimeAsset);
+        }
+    }
+
+    private static GameplayInputReader CreateReader(out InputActionAsset runtimeAsset)
+    {
+        InputActionAsset sourceAsset = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputActionsAssetPath);
+        Assert.That(sourceAsset, Is.Not.Null, $"Expected input action asset at {InputActionsAssetPath}.");
+
+        runtimeAsset = InputActionAsset.FromJson(sourceAsset.ToJson());
+        GameObject host = new GameObject("GameplayInputReaderDeviceTests");
+        GameplayInputReader reader = host.AddComponent<GameplayInputReader>();
+        typeof(GameplayInputReader)
+            .GetField("inputActions", BindingFlags.Instance | BindingFlags.NonPublic)
+            .SetValue(reader, runtimeAsset);
+        typeof(GameplayInputReader)
+            .GetMethod("OnEnable", BindingFlags.Instance | BindingFlags.NonPublic)
+            .Invoke(reader, null);
+        return reader;
+    }
+
+    private static void DestroyReaderAndAsset(GameplayInputReader reader, InputActionAsset runtimeAsset)
+    {
+        typeof(GameplayInputReader)
+            .GetMethod("OnDisable", BindingFlags.Instance | BindingFlags.NonPublic)
+            .Invoke(reader, null);
+        UnityEngine.Object.DestroyImmediate(reader.gameObject);
+        UnityEngine.Object.DestroyImmediate(runtimeAsset);
     }
 }

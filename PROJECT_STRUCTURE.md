@@ -99,8 +99,8 @@ Assets/
 
 - `Input/`
   - 사람 플레이어 입력 처리
-  - `PlayerActionBindings`는 패스, 슛, 취소의 마우스 버튼과 선택적 키보드 키를 설정으로 보관한다.
-  - `PlayerActionInputReader`는 바인딩을 pressed/held/released 상태로 변환하며 게임 규칙을 알지 않는다.
+  - `GameplayInputReader`는 `Settings/InputSystem_Actions.inputactions`의 기본 키 바인딩을 의미 단위 입력과 pressed/held/released 상태로 변환한다.
+  - `PlayerInput`, `GameManager`, `CameraViewSwitcher`, `ViewHintUI`는 키코드가 아닌 `GameplayInputAction`만 읽는다. 추후 재지정과 저장은 Input 폴더의 override/persistence 서비스로 추가한다.
 
 - `Camera/`
   - Futsal 전용 카메라 정책과 Cinemachine backend adapter

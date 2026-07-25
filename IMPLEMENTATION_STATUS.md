@@ -16,8 +16,9 @@
 ## 2026-07-25 Unified input scene wiring
 
 - `SampleScene` uses the single `GameplayInputReader` on `Player`, backed by `Assets/_Game/Settings/InputSystem_Actions.inputactions`.
-- `PlayerInput`, `GameManager`, `CameraViewSwitcher`, and `ViewHintUI` all reference that same scene reader; no second reader or legacy action-binding reference is introduced.
-- Verified in Unity EditMode: focused input tests `9/9` and the full suite `52/52` passed. Unity MCP's editor-state cache reported stale after the run, so `TestResults.xml` was also checked directly (`52/52`, failed `0`).
+- `PlayerInput`, `GameManager`, `CameraViewSwitcher`, and `ViewHintUI` all reference that same scene reader. `NetPlayer` no longer owns a second reader, so it cannot disable the shared action map; an unassigned player resolves the scene reader at runtime.
+- `F5` now alternates ownership of the main camera between `ThirdPersonActionCamera` and the legacy `CameraViewSwitcher` view; the hint reports the active view.
+- Verified in Unity EditMode: the full suite `56/56` passed, including actual arrow-key movement and right-Shift press/hold/release through the Input System test device.
 - Manual Play Mode follow-up remains: confirm pause, camera-toggle hint/toggle, movement/actions, and no missing-reference messages using the active scene reader.
 
 ## 2026-07-24 Update
@@ -181,7 +182,7 @@
 
 ### 2026-07-23 Mouse charge pass and shot
 
-- `DefaultPlayerActionBindings.asset`은 기본적으로 좌클릭 차지 패스, 우클릭 차지 슛, `C` 차지 취소를 제공하며, 각 행동의 키보드 대체 키는 설정에서 바꿀 수 있다.
+- `InputSystem_Actions.inputactions`은 기본적으로 좌클릭 차지 패스, 우클릭 차지 슛, `C` 차지 취소를 제공하며, 행동별 기본 바인딩은 향후 런타임 재지정과 저장의 기준값이다.
 - `PlayerInput`은 버튼 해제 순간의 카메라 수평 전방 방향만 `PlayerBallHandler`에 전달한다. 차지 중 마우스 시점 전환은 다음 해제 방향에 반영되고 캐릭터 facing은 바꾸지 않는다.
 - `BallInteractionController`는 동시에 하나의 `Pass` 또는 `Shot` 차지만 보유한다. 취소 또는 다른 행동 해제는 소유 공을 발사하지 않는다.
 - `BallConfig`은 패스 차지 힘 `3.5`~`7.0`, 슛 차지 힘 `3.5`~`13.0`, 최대 차지 시간 `1.0`초를 사용한다.

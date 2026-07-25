@@ -11,8 +11,6 @@ using UnityEngine;
 /// </summary>
 public class CameraViewSwitcher : MonoBehaviour
 {
-    [Header("Compatibility")]
-    [SerializeField] private bool deferToActionCamera = true;
     [SerializeField] private GameplayInputReader inputReader;
 
     [Tooltip("따라갈 대상. 비우면 이름이 'Player'인 오브젝트를 찾는다.")]
@@ -64,14 +62,13 @@ public class CameraViewSwitcher : MonoBehaviour
         if (inputReader != null &&
             inputReader.ReadButton(GameplayInputAction.ToggleLegacyCamera).WasPressed)
         {
-            thirdPerson = !thirdPerson;
-            if (thirdPerson) SnapToThirdPerson();
+            ToggleCameraOwner();
         }
     }
 
     private void LateUpdate()
     {
-        if (deferToActionCamera && actionCamera != null && actionCamera.enabled)
+        if (actionCamera != null && actionCamera.enabled)
             return;
 
         if (thirdPerson && target != null)
@@ -86,6 +83,22 @@ public class CameraViewSwitcher : MonoBehaviour
             transform.position = Vector3.Lerp(transform.position, defaultPosition, 1f - Mathf.Exp(-positionLerp * Time.deltaTime));
             transform.rotation = Quaternion.Slerp(transform.rotation, defaultRotation, 1f - Mathf.Exp(-rotationLerp * Time.deltaTime));
         }
+    }
+
+    private void ToggleCameraOwner()
+    {
+        if (actionCamera != null)
+        {
+            thirdPerson = actionCamera.enabled;
+            actionCamera.enabled = !thirdPerson;
+        }
+        else
+        {
+            thirdPerson = !thirdPerson;
+        }
+
+        if (thirdPerson)
+            SnapToThirdPerson();
     }
 
     private void GetThirdPersonPose(float yaw, out Vector3 pos, out Quaternion rot)

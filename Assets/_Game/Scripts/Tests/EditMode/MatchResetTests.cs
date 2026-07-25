@@ -34,6 +34,41 @@ public class MatchResetTests
     }
 
     [Test]
+    public void CameraViewSwitcher_TogglesExclusiveActionAndLegacyCameraOwnership()
+    {
+        GameObject target = new GameObject("Camera Target");
+        GameObject cameraObject = new GameObject("Camera");
+        cameraObject.SetActive(false);
+
+        try
+        {
+            cameraObject.AddComponent<Camera>();
+            ThirdPersonActionCamera actionCamera = cameraObject.AddComponent<ThirdPersonActionCamera>();
+            CameraViewSwitcher switcher = cameraObject.AddComponent<CameraViewSwitcher>();
+            typeof(CameraViewSwitcher)
+                .GetField("target", BindingFlags.Instance | BindingFlags.NonPublic)
+                .SetValue(switcher, target.transform);
+            cameraObject.SetActive(true);
+            InvokePrivate(switcher, "Awake");
+
+            InvokePrivate(switcher, "ToggleCameraOwner");
+
+            Assert.That(actionCamera.enabled, Is.False);
+            Assert.That(switcher.IsThirdPerson, Is.True);
+
+            InvokePrivate(switcher, "ToggleCameraOwner");
+
+            Assert.That(actionCamera.enabled, Is.True);
+            Assert.That(switcher.IsThirdPerson, Is.False);
+        }
+        finally
+        {
+            Object.DestroyImmediate(cameraObject);
+            Object.DestroyImmediate(target);
+        }
+    }
+
+    [Test]
     public void ViewHintUI_UsesTheCameraToggleBindingDisplay()
     {
         Assert.That(
