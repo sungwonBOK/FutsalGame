@@ -9,6 +9,14 @@ public class GameplayInputReader : MonoBehaviour
         {
             { GameplayInputAction.Move, "Move" },
             { GameplayInputAction.Sprint, "Sprint" },
+            { GameplayInputAction.PrimaryAction, "PrimaryAction" },
+            { GameplayInputAction.SecondaryAction, "SecondaryAction" },
+            { GameplayInputAction.QueueOneTouchPass, "QueueOneTouchPass" },
+            { GameplayInputAction.QueueOneTouchShot, "QueueOneTouchShot" },
+            { GameplayInputAction.CancelAction, "CancelAction" },
+            { GameplayInputAction.ContextQ, "ContextQ" },
+            { GameplayInputAction.Grab, "Grab" },
+            { GameplayInputAction.ContextF, "ContextF" },
             { GameplayInputAction.Pass, "Pass" },
             { GameplayInputAction.Shot, "Shot" },
             { GameplayInputAction.CancelCharge, "CancelCharge" },
@@ -37,13 +45,21 @@ public class GameplayInputReader : MonoBehaviour
 
     public GameplayInputButtonState ReadButton(GameplayInputAction action)
     {
-        InputAction inputAction = ResolveAction(action);
-        return inputAction == null
-            ? default
-            : new GameplayInputButtonState(
-                inputAction.WasPressedThisFrame(),
-                inputAction.IsPressed(),
-                inputAction.WasReleasedThisFrame());
+        GameplayInputButtonState state = ReadRawButton(action);
+
+        if (action == GameplayInputAction.PrimaryAction
+            && IsQueueActionActive(GameplayInputAction.QueueOneTouchPass))
+        {
+            return default;
+        }
+
+        if (action == GameplayInputAction.SecondaryAction
+            && IsQueueActionActive(GameplayInputAction.QueueOneTouchShot))
+        {
+            return default;
+        }
+
+        return state;
     }
 
     public Vector2 ReadMove()
@@ -64,5 +80,22 @@ public class GameplayInputReader : MonoBehaviour
             return null;
 
         return playerMap.FindAction(actionName, throwIfNotFound: false);
+    }
+
+    private GameplayInputButtonState ReadRawButton(GameplayInputAction action)
+    {
+        InputAction inputAction = ResolveAction(action);
+        return inputAction == null
+            ? default
+            : new GameplayInputButtonState(
+                inputAction.WasPressedThisFrame(),
+                inputAction.IsPressed(),
+                inputAction.WasReleasedThisFrame());
+    }
+
+    private bool IsQueueActionActive(GameplayInputAction action)
+    {
+        GameplayInputButtonState state = ReadRawButton(action);
+        return state.WasPressed || state.IsPressed || state.WasReleased;
     }
 }

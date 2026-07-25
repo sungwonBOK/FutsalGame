@@ -2,6 +2,16 @@ public enum GameplayInputAction
 {
     Move,
     Sprint,
+    PrimaryAction,
+    SecondaryAction,
+    QueueOneTouchPass,
+    QueueOneTouchShot,
+    CancelAction,
+    ContextQ,
+    Grab,
+    ContextF,
+
+    // Removed after PlayerInput migrates to ContextualPlayerActionRouter.
     Pass,
     Shot,
     CancelCharge,

@@ -56,12 +56,12 @@ public class GameplayInputReaderTests
 
         try
         {
-            GameplayInputButtonState missingAction = missingActionReader.ReadButton(GameplayInputAction.Pass);
-            GameplayInputButtonState missingMap = missingMapReader.ReadButton(GameplayInputAction.Pass);
+            GameplayInputButtonState missingAction = missingActionReader.ReadButton(GameplayInputAction.PrimaryAction);
+            GameplayInputButtonState missingMap = missingMapReader.ReadButton(GameplayInputAction.PrimaryAction);
 
             Assert.That(missingAction.IsPressed || missingAction.WasPressed || missingAction.WasReleased, Is.False);
             Assert.That(missingActionReader.ReadMove(), Is.EqualTo(Vector2.zero));
-            Assert.That(missingActionReader.GetBindingDisplayString(GameplayInputAction.Pass), Is.Empty);
+            Assert.That(missingActionReader.GetBindingDisplayString(GameplayInputAction.PrimaryAction), Is.Empty);
             Assert.That(missingMap.IsPressed || missingMap.WasPressed || missingMap.WasReleased, Is.False);
         }
         finally
@@ -103,12 +103,21 @@ public class GameplayInputReaderTests
         Assert.That(asset, Is.Not.Null, $"Expected input action asset at {InputActionsAssetPath}.");
         AssertActionBindings(asset, "Move", "<Keyboard>/w", "<Keyboard>/upArrow", "<Keyboard>/a", "<Keyboard>/leftArrow", "<Keyboard>/s", "<Keyboard>/downArrow", "<Keyboard>/d", "<Keyboard>/rightArrow");
         AssertActionBindings(asset, "Sprint", "<Keyboard>/leftShift", "<Keyboard>/rightShift");
-        AssertActionBindings(asset, "Pass", "<Mouse>/leftButton");
-        AssertActionBindings(asset, "Shot", "<Mouse>/rightButton");
-        AssertActionBindings(asset, "CancelCharge", "<Keyboard>/c");
-        AssertActionBindings(asset, "Dodge", "<Keyboard>/l");
-        AssertActionBindings(asset, "Punch", "<Keyboard>/j");
-        AssertActionBindings(asset, "SlideTackle", "<Keyboard>/k");
+        AssertActionBindings(asset, "PrimaryAction", "<Mouse>/leftButton");
+        AssertActionBindings(asset, "SecondaryAction", "<Mouse>/rightButton");
+        AssertCompositeBinding(asset, "QueueOneTouchPass", "<Keyboard>/leftAlt", "<Mouse>/leftButton");
+        AssertCompositeBinding(asset, "QueueOneTouchPass", "<Keyboard>/rightAlt", "<Mouse>/leftButton");
+        AssertCompositeBinding(asset, "QueueOneTouchShot", "<Keyboard>/leftAlt", "<Mouse>/rightButton");
+        AssertCompositeBinding(asset, "QueueOneTouchShot", "<Keyboard>/rightAlt", "<Mouse>/rightButton");
+        AssertActionBindings(asset, "CancelAction", "<Keyboard>/c");
+        AssertActionBindings(asset, "ContextQ", "<Keyboard>/q");
+        AssertActionBindings(asset, "Grab", "<Keyboard>/e");
+        AssertActionBindings(asset, "ContextF", "<Keyboard>/f");
+        AssertActionBindings(asset, "Dodge", "<Keyboard>/space");
+        Assert.That(FindAction(asset, "Pass"), Is.Null);
+        Assert.That(FindAction(asset, "Shot"), Is.Null);
+        Assert.That(AllBindingPaths(asset), Does.Not.Contain("<Keyboard>/k"));
+        Assert.That(AllBindingPaths(asset), Does.Not.Contain("<Keyboard>/l"));
         AssertActionBindings(asset, "Pause", "<Keyboard>/escape");
         AssertActionBindings(asset, "Restart", "<Keyboard>/r", "<Keyboard>/space");
         AssertActionBindings(asset, "ToggleLegacyCamera", "<Keyboard>/f5");
@@ -158,6 +167,63 @@ public class GameplayInputReaderTests
 
         foreach (string expectedPath in expectedPaths)
             Assert.That(actualPaths, Does.Contain(expectedPath), $"Expected Player/{actionName} to bind {expectedPath}.");
+    }
+
+    private static void AssertCompositeBinding(ScriptableObject asset, string actionName, string modifierPath, string buttonPath)
+    {
+        object action = FindAction(asset, actionName);
+        Assert.That(action, Is.Not.Null, $"Expected Player/{actionName} action.");
+
+        IEnumerable bindings = (IEnumerable)action.GetType().GetProperty("bindings").GetValue(action);
+        bool foundComposite = false;
+        foreach (object binding in bindings)
+        {
+            bool isComposite = (bool)binding.GetType().GetProperty("isComposite").GetValue(binding);
+            if (!isComposite)
+                continue;
+
+            string path = (string)binding.GetType().GetProperty("path").GetValue(binding);
+            if (path != "OneModifier")
+                continue;
+
+            foundComposite = HasCompositePart(bindings, "modifier", modifierPath)
+                && HasCompositePart(bindings, "binding", buttonPath);
+            if (foundComposite)
+                break;
+        }
+
+        Assert.That(foundComposite, Is.True, $"Expected Player/{actionName} to have OneModifier {modifierPath} + {buttonPath}.");
+    }
+
+    private static bool HasCompositePart(IEnumerable bindings, string partName, string expectedPath)
+    {
+        foreach (object binding in bindings)
+        {
+            string name = (string)binding.GetType().GetProperty("name").GetValue(binding);
+            string path = (string)binding.GetType().GetProperty("effectivePath").GetValue(binding);
+            if (string.Equals(name, partName, StringComparison.OrdinalIgnoreCase) && path == expectedPath)
+                return true;
+        }
+
+        return false;
+    }
+
+    private static List<string> AllBindingPaths(ScriptableObject asset)
+    {
+        var paths = new List<string>();
+        IEnumerable maps = (IEnumerable)asset.GetType().GetProperty("actionMaps").GetValue(asset);
+        foreach (object map in maps)
+        {
+            IEnumerable bindings = (IEnumerable)map.GetType().GetProperty("bindings").GetValue(map);
+            foreach (object binding in bindings)
+            {
+                string path = (string)binding.GetType().GetProperty("effectivePath").GetValue(binding);
+                if (!string.IsNullOrEmpty(path))
+                    paths.Add(path);
+            }
+        }
+
+        return paths;
     }
 
     private static void ApplyBindingOverride(object action, string path)
@@ -232,6 +298,27 @@ public class GameplayInputReaderDeviceTests : InputTestFixture
             Assert.That(released.WasPressed, Is.False);
             Assert.That(released.IsPressed, Is.False);
             Assert.That(released.WasReleased, Is.True);
+        }
+        finally
+        {
+            DestroyReaderAndAsset(reader, runtimeAsset);
+        }
+    }
+
+    [Test]
+    public void AltLeftClick_TriggersOnlyTheOneTouchPassAction()
+    {
+        Keyboard keyboard = InputSystem.AddDevice<Keyboard>();
+        Mouse mouse = InputSystem.AddDevice<Mouse>();
+        GameplayInputReader reader = CreateReader(out InputActionAsset runtimeAsset);
+
+        try
+        {
+            Press(keyboard.leftAltKey);
+            Press(mouse.leftButton);
+
+            Assert.That(reader.ReadButton(GameplayInputAction.QueueOneTouchPass).WasPressed, Is.True);
+            Assert.That(reader.ReadButton(GameplayInputAction.PrimaryAction).WasPressed, Is.False);
         }
         finally
         {
