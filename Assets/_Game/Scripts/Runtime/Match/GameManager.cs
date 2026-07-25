@@ -1,10 +1,9 @@
 using System.Collections;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 /// <summary>
 /// 경기 전체 흐름(게임 루프)을 총괄한다.
-/// 상태: Kickoff(카운트다운) → Playing(진행) → GameOver(종료). ESC로 일시정지/재개.
+/// 상태: Kickoff(카운트다운) → Playing(진행) → GameOver(종료). Pause 액션으로 일시정지/재개.
 /// 점수·타이머·승패를 관리하고, 각 상태에 맞춰 PlayActive로 입력·AI·공 소유를 잠그거나 푼다.
 ///
 /// 표현(UI)은 이 매니저가 직접 그리지 않는다 — MatchUI가 아래 공개 상태
@@ -28,6 +27,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private Rigidbody ball;
     [SerializeField] private Transform player;
     [SerializeField] private Transform opponent;
+    [SerializeField] private GameplayInputReader inputReader;
 
     [Header("Match Rules")]
     [Tooltip("경기 제한 시간(초). 기본 180초 = 3분. Playing 중에만 흐른다.")]
@@ -113,16 +113,16 @@ public class GameManager : MonoBehaviour
 
     private void Update()
     {
-        Keyboard kb = Keyboard.current;
-        if (kb == null) return;
-
-        // ESC: 일시정지/재개 토글 (종료 화면에서는 무시).
-        if (kb.escapeKey.wasPressedThisFrame && State != MatchState.GameOver)
+        // Pause: 일시정지/재개 토글 (종료 화면에서는 무시).
+        if (inputReader != null &&
+            inputReader.ReadButton(GameplayInputAction.Pause).WasPressed &&
+            State != MatchState.GameOver)
             TogglePause();
 
-        // 종료 화면: R 또는 Space로 새 경기.
+        // 종료 화면: Restart 액션으로 새 경기.
         if (State == MatchState.GameOver && !IsPaused &&
-            (kb.rKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame))
+            inputReader != null &&
+            inputReader.ReadButton(GameplayInputAction.Restart).WasPressed)
         {
             BeginMatch();
             return;

@@ -1,8 +1,7 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 /// <summary>
-/// F5로 카메라 시점을 전환한다.
+/// ToggleLegacyCamera 액션으로 카메라 시점을 전환한다.
 /// 기본: 씬에 배치된 고정 시점(기존 화면 그대로).
 /// 전환: 3인칭 - 플레이어 뒤 위쪽에서 뒤통수를 내려다보는 시점.
 ///
@@ -14,6 +13,7 @@ public class CameraViewSwitcher : MonoBehaviour
 {
     [Header("Compatibility")]
     [SerializeField] private bool deferToActionCamera = true;
+    [SerializeField] private GameplayInputReader inputReader;
 
     [Tooltip("따라갈 대상. 비우면 이름이 'Player'인 오브젝트를 찾는다.")]
     [SerializeField] private Transform target;
@@ -61,8 +61,8 @@ public class CameraViewSwitcher : MonoBehaviour
 
     private void Update()
     {
-        Keyboard kb = Keyboard.current;
-        if (kb != null && kb.f5Key.wasPressedThisFrame)
+        if (inputReader != null &&
+            inputReader.ReadButton(GameplayInputAction.ToggleLegacyCamera).WasPressed)
         {
             thirdPerson = !thirdPerson;
             if (thirdPerson) SnapToThirdPerson();

@@ -1,9 +1,46 @@
+using System.IO;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
 
 public class MatchResetTests
 {
+    private static string GameManagerPath => Path.Combine(
+        Application.dataPath,
+        "_Game/Scripts/Runtime/Match/GameManager.cs");
+
+    private static string CameraSwitcherPath => Path.Combine(
+        Application.dataPath,
+        "_Game/Scripts/Runtime/Camera/CameraViewSwitcher.cs");
+
+    private static string ViewHintPath => Path.Combine(
+        Application.dataPath,
+        "_Game/Scripts/Runtime/UI/ViewHintUI.cs");
+
+    [Test]
+    public void GameManager_UsesThePauseInputAction()
+    {
+        Assert.That(
+            File.ReadAllText(GameManagerPath),
+            Does.Contain("GameplayInputAction.Pause"));
+    }
+
+    [Test]
+    public void CameraViewSwitcher_UsesTheCameraToggleInputAction()
+    {
+        Assert.That(
+            File.ReadAllText(CameraSwitcherPath),
+            Does.Contain("GameplayInputAction.ToggleLegacyCamera"));
+    }
+
+    [Test]
+    public void ViewHintUI_UsesTheCameraToggleBindingDisplay()
+    {
+        Assert.That(
+            File.ReadAllText(ViewHintPath),
+            Does.Contain("GetBindingDisplayString"));
+    }
+
     [Test]
     public void ResetCharacter_RestoresMobilityState()
     {

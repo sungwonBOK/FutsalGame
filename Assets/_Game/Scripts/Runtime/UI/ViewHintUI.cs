@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// 화면 좌하단에 "F5: 시점 전환"과 현재 시점을 표시한다.
+/// 화면 좌하단에 현재 시점 전환 바인딩과 현재 시점을 표시한다.
 /// 로직은 갖지 않고 CameraViewSwitcher의 공개 상태(IsThirdPerson)만 읽어 그린다.
 /// (AbilityCooldownUI와 같은 이유로 계층을 코드로 만든다 — 씬 YAML을 건드리지 않는다.)
 /// </summary>
@@ -11,6 +11,7 @@ public class ViewHintUI : MonoBehaviour
     [Header("References")]
     [Tooltip("표시할 대상 시점 전환기. 비우면 메인 카메라에서 찾는다.")]
     [SerializeField] private CameraViewSwitcher switcher;
+    [SerializeField] private GameplayInputReader inputReader;
 
     [Header("Layout")]
     [Tooltip("화면 좌하단 모서리로부터의 여백(픽셀, 1920x1080 기준).")]
@@ -36,7 +37,10 @@ public class ViewHintUI : MonoBehaviour
         if (label.gameObject.activeSelf != visible) label.gameObject.SetActive(visible);
         if (!visible) return;
 
-        label.text = "F5: 시점 전환  —  현재: " + (switcher.IsThirdPerson ? "3인칭" : "기본");
+        string binding = inputReader != null
+            ? inputReader.GetBindingDisplayString(GameplayInputAction.ToggleLegacyCamera)
+            : string.Empty;
+        label.text = binding + ": 시점 전환  —  현재: " + (switcher.IsThirdPerson ? "3인칭" : "기본");
     }
 
     private void Build()
