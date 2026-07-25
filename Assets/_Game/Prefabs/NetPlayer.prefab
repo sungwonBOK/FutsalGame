@@ -786,6 +786,7 @@ GameObject:
   - component: {fileID: 8454980551100531994}
   - component: {fileID: 9066333100707334323}
   - component: {fileID: 4199211009935589782}
+  - component: {fileID: 6233456049302109109}
   m_Layer: 0
   m_Name: NetPlayer
   m_TagString: Untagged
@@ -986,6 +987,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerInput
   movementReference: {fileID: 0}
+  inputReader: {fileID: 6233456049302109109}
 --- !u!114 &8936948511407146191
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1102,6 +1104,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: FutsalGame.Runtime::CharacterLocomotion
   config: {fileID: 11400000, guid: 34187b9fa43dc4a47b8057c92243fcc2, type: 2}
+--- !u!114 &6233456049302109109
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3329367792369302264}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f8f46aaa5a60f0b48afc5a8287f590e2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: FutsalGame.Runtime::GameplayInputReader
+  inputActions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
 --- !u!1 &3392525434865351877
 GameObject:
   m_ObjectHideFlags: 0
