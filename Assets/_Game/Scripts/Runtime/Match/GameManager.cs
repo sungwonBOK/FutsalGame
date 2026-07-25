@@ -320,6 +320,9 @@ public class GameManager : MonoBehaviour
         CharacterLocomotion locomotion = t.GetComponent<CharacterLocomotion>();
         if (locomotion != null) locomotion.ResetMobilityState();
 
+        PlayerInput playerInput = t.GetComponent<PlayerInput>();
+        if (playerInput != null) playerInput.ClearPreparedActions();
+
         CombatController combat = t.GetComponent<CombatController>();
         if (combat != null) combat.ResetCombatState();
     }

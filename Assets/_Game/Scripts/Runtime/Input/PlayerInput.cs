@@ -9,6 +9,7 @@ public class PlayerInput : MonoBehaviour
     private CombatController combat;
     private PlayerBallHandler ball;
     private CharacterState state;
+    private ContextualPlayerActionRouter actionRouter;
 
     private void Awake()
     {
@@ -19,6 +20,7 @@ public class PlayerInput : MonoBehaviour
         combat = GetComponent<CombatController>();
         ball = GetComponent<PlayerBallHandler>();
         state = GetComponent<CharacterState>();
+        actionRouter = new ContextualPlayerActionRouter(locomotion, combat, ball);
 
         if (inputReader == null)
             inputReader = FindAnyObjectByType<GameplayInputReader>();
@@ -44,18 +46,11 @@ public class PlayerInput : MonoBehaviour
         locomotion.SetPlayerMoveInput(moveInput, moveDirection, sprint, hasBall);
 
         Vector3 actionDirection = locomotion.ActionDirection;
-        if (inputReader != null && inputReader.ReadButton(GameplayInputAction.Dodge).WasPressed)
-            locomotion.TryDodge(actionDirection);
-        if (inputReader != null && inputReader.ReadButton(GameplayInputAction.Punch).WasPressed && combat != null)
-            combat.Punch(actionDirection);
-        if (inputReader != null && inputReader.ReadButton(GameplayInputAction.SlideTackle).WasPressed && combat != null)
-            combat.SlideTackle(actionDirection);
 
         if (ball != null)
-        {
             ball.SetSprintDribbleInput(sprint, actionDirection);
-            HandleBallActions();
-        }
+
+        actionRouter?.Process(inputReader, actionDirection);
     }
 
     public static Vector2 BuildMoveInput(bool leftPressed, bool rightPressed, bool downPressed, bool upPressed)
@@ -90,38 +85,13 @@ public class PlayerInput : MonoBehaviour
         return fallbackForward.sqrMagnitude > 0.0001f ? fallbackForward.normalized : Vector3.forward;
     }
 
-    private void HandleBallActions()
+    public void ClearPreparedActions()
     {
-        GameplayInputButtonState cancel = inputReader != null
-            ? inputReader.ReadButton(GameplayInputAction.CancelCharge)
-            : default;
-        GameplayInputButtonState pass = inputReader != null
-            ? inputReader.ReadButton(GameplayInputAction.Pass)
-            : default;
-        GameplayInputButtonState shot = inputReader != null
-            ? inputReader.ReadButton(GameplayInputAction.Shot)
-            : default;
-
-        if (cancel.WasPressed)
-        {
-            ball.CancelCharge();
-            return;
-        }
-
-        if (ball.IsCharging)
-        {
-            Vector3 cameraForward = BuildPlanarCameraForward(movementReference, transform.forward);
-            if (pass.WasReleased)
-                ball.ReleaseCharge(BallChargeAction.Pass, cameraForward);
-            if (shot.WasReleased)
-                ball.ReleaseCharge(BallChargeAction.Shot, cameraForward);
-            return;
-        }
-
-        if (pass.WasPressed)
-            ball.StartCharge(BallChargeAction.Pass);
-        else if (shot.WasPressed)
-            ball.StartCharge(BallChargeAction.Shot);
+        actionRouter?.ClearPreparedActions();
     }
 
+    private void OnDisable()
+    {
+        ClearPreparedActions();
+    }
 }

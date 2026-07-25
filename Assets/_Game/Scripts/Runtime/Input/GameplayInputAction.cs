@@ -10,14 +10,7 @@ public enum GameplayInputAction
     ContextQ,
     Grab,
     ContextF,
-
-    // Removed after PlayerInput migrates to ContextualPlayerActionRouter.
-    Pass,
-    Shot,
-    CancelCharge,
     Dodge,
-    Punch,
-    SlideTackle,
     Pause,
     Restart,
     ToggleLegacyCamera

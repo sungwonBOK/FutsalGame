@@ -17,12 +17,7 @@ public class GameplayInputReader : MonoBehaviour
             { GameplayInputAction.ContextQ, "ContextQ" },
             { GameplayInputAction.Grab, "Grab" },
             { GameplayInputAction.ContextF, "ContextF" },
-            { GameplayInputAction.Pass, "Pass" },
-            { GameplayInputAction.Shot, "Shot" },
-            { GameplayInputAction.CancelCharge, "CancelCharge" },
             { GameplayInputAction.Dodge, "Dodge" },
-            { GameplayInputAction.Punch, "Punch" },
-            { GameplayInputAction.SlideTackle, "SlideTackle" },
             { GameplayInputAction.Pause, "Pause" },
             { GameplayInputAction.Restart, "Restart" },
             { GameplayInputAction.ToggleLegacyCamera, "ToggleLegacyCamera" }

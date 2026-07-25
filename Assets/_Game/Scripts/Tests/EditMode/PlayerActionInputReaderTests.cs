@@ -9,19 +9,25 @@ public class PlayerActionInputReaderTests
         Application.dataPath,
         "_Game/Scripts/Runtime/Input/PlayerInput.cs");
 
+    private static string ContextualRouterPath => Path.Combine(
+        Application.dataPath,
+        "_Game/Scripts/Runtime/Input/ContextualPlayerActionRouter.cs");
+
     [Test]
     public void PlayerInput_UsesSemanticGameplayInputActionsInsteadOfRawControls()
     {
         string source = File.ReadAllText(PlayerInputPath);
+        string routerSource = File.ReadAllText(ContextualRouterPath);
 
         Assert.That(source, Does.Contain("inputReader.ReadMove()"));
         Assert.That(source, Does.Contain("GameplayInputAction.Sprint"));
-        Assert.That(source, Does.Contain("GameplayInputAction.Pass"));
-        Assert.That(source, Does.Contain("GameplayInputAction.Shot"));
-        Assert.That(source, Does.Contain("GameplayInputAction.CancelCharge"));
-        Assert.That(source, Does.Contain("GameplayInputAction.Dodge"));
-        Assert.That(source, Does.Contain("GameplayInputAction.Punch"));
-        Assert.That(source, Does.Contain("GameplayInputAction.SlideTackle"));
+        Assert.That(source, Does.Contain("actionRouter?.Process"));
+        Assert.That(routerSource, Does.Contain("GameplayInputAction.PrimaryAction"));
+        Assert.That(routerSource, Does.Contain("GameplayInputAction.SecondaryAction"));
+        Assert.That(routerSource, Does.Contain("GameplayInputAction.QueueOneTouchPass"));
+        Assert.That(routerSource, Does.Contain("GameplayInputAction.QueueOneTouchShot"));
+        Assert.That(routerSource, Does.Contain("GameplayInputAction.CancelAction"));
+        Assert.That(routerSource, Does.Contain("GameplayInputAction.Dodge"));
         Assert.That(source, Does.Not.Contain("Keyboard.current"));
         Assert.That(source, Does.Not.Contain("Mouse.current"));
         Assert.That(source, Does.Not.Contain("PlayerActionBindings"));
