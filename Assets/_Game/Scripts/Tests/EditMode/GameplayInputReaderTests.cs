@@ -352,3 +352,80 @@ public class GameplayInputReaderDeviceTests : InputTestFixture
         UnityEngine.Object.DestroyImmediate(runtimeAsset);
     }
 }
+
+public class ContextualPlayerActionRouterTests : InputTestFixture
+{
+    private const string ContextFInputJson = @"{
+        ""name"": ""ContextualPlayerActionRouterTests"",
+        ""maps"": [
+            {
+                ""name"": ""Player"",
+                ""id"": ""e8f7c1cb-0bcb-40e4-b754-53218eacfe58"",
+                ""actions"": [{ ""name"": ""ContextF"", ""type"": ""Button"", ""id"": ""985a5fc4-0583-4310-a2c8-0b2e2fa42a37"" }],
+                ""bindings"": [{ ""id"": ""c7994d7c-f230-4994-9b02-a6c53aea5ae8"", ""path"": ""<Keyboard>/f"", ""action"": ""ContextF"" }]
+            }
+        ]
+    }";
+
+    [Test]
+    public void ContextF_StartsTackleWhenPlayerDoesNotHaveBall()
+    {
+        Keyboard keyboard = InputSystem.AddDevice<Keyboard>();
+        InputActionAsset inputAsset = InputActionAsset.FromJson(ContextFInputJson);
+        GameplayInputReader reader = CreateReader(inputAsset);
+        GameObject player = new GameObject("Context F Player");
+        player.AddComponent<Rigidbody>();
+        CharacterState state = player.AddComponent<CharacterState>();
+        CharacterMotor motor = player.AddComponent<CharacterMotor>();
+        CharacterLocomotion locomotion = player.AddComponent<CharacterLocomotion>();
+        CombatController combat = player.AddComponent<CombatController>();
+        ContextualPlayerActionRouter router = new ContextualPlayerActionRouter(locomotion, combat, ball: null);
+
+        try
+        {
+            InvokeAwake(state);
+            InvokeAwake(motor);
+            InvokeAwake(locomotion);
+            InvokeAwake(combat);
+
+            Press(keyboard.fKey);
+            Assert.That(reader.ReadButton(GameplayInputAction.ContextF).WasPressed, Is.True);
+
+            router.Process(reader, Vector3.forward, Vector3.forward);
+
+            Assert.That(motor.IsDashing, Is.True);
+        }
+        finally
+        {
+            typeof(GameplayInputReader)
+                .GetMethod("OnDisable", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(reader, null);
+            UnityEngine.Object.DestroyImmediate(player);
+            UnityEngine.Object.DestroyImmediate(reader.gameObject);
+            UnityEngine.Object.DestroyImmediate(inputAsset);
+        }
+    }
+
+    private static GameplayInputReader CreateReader(InputActionAsset inputAsset)
+    {
+        GameObject host = new GameObject("ContextualPlayerActionRouterTests");
+        host.SetActive(false);
+
+        GameplayInputReader reader = host.AddComponent<GameplayInputReader>();
+        typeof(GameplayInputReader)
+            .GetField("inputActions", BindingFlags.Instance | BindingFlags.NonPublic)
+            .SetValue(reader, inputAsset);
+        host.SetActive(true);
+        typeof(GameplayInputReader)
+            .GetMethod("OnEnable", BindingFlags.Instance | BindingFlags.NonPublic)
+            .Invoke(reader, null);
+        return reader;
+    }
+
+    private static void InvokeAwake(Component component)
+    {
+        component.GetType()
+            .GetMethod("Awake", BindingFlags.Instance | BindingFlags.NonPublic)
+            .Invoke(component, null);
+    }
+}

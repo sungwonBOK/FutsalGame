@@ -29,6 +29,14 @@
 - `OneTouchIntentBuffer` retains the latest prepared pass or shot. `OneTouchActionExecutor` immediately executes it with possession, whiffs with only the existing shoot animation without possession, and consumes it only after a successful with-ball action.
 - Verified in Unity EditMode: focused contextual-input regression tests and the full `60/60` suite passed. Manual Play Mode confirmation remains for no-ball whiff presentation and automatic prepared-action consumption after later possession.
 
+## 2026-07-26 Possession input context
+
+- `BallController` remains the authority for actual ball ownership. `PossessionInputContext` separately evaluates the effective player-input context without changing ownership, physics, combat, or animation state.
+- While Sprint is held, a free ball inside the existing configured acquisition range retains the pass/shot input context for `0.65` seconds after ownership drops. An opponent owner or an out-of-range ball ends that input grace immediately.
+- Primary/secondary ball actions are latched at press. If sprint touch has temporarily released the ball, a held possession-context mouse input waits for real reacquisition instead of becoming a punch or starting a new no-ball action.
+- A no-ball primary punch or F tackle starts a `0.40`-second transition window. Further no-ball combat input remains available and refreshes that timer. Only actual ownership gained during the window blocks LMB/RMB and Alt mouse ball actions until the window ends, preventing combat spam from becoming an immediate pass or shot. F remains a no-op while possession context is active; guard/defense behavior is intentionally deferred.
+- Automated coverage is limited to the pure possession-context timer/suppression rules. Manual Play Mode follow-up remains required for sprint-touch recovery, held/released mouse behavior across recovery, combat rapid-input recovery, and F's possession no-op behavior.
+
 ## 2026-07-24 Update
 
 - `CharacterLocomotion` owns stamina, sprint drain/regeneration, dodge timing, and dodge availability; `CharacterMotor` remains responsible for applying the resolved movement and dash velocity.

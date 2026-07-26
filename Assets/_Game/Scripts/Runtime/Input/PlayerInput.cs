@@ -45,12 +45,13 @@ public class PlayerInput : MonoBehaviour
         Vector3 moveDirection = BuildCameraRelativeMoveDirection(moveInput, movementReference);
         locomotion.SetPlayerMoveInput(moveInput, moveDirection, sprint, hasBall);
 
-        Vector3 actionDirection = locomotion.ActionDirection;
+        Vector3 characterActionDirection = locomotion.ActionDirection;
+        Vector3 ballAimDirection = BuildPlanarCameraForward(movementReference, transform.forward);
 
         if (ball != null)
-            ball.SetSprintDribbleInput(sprint, actionDirection);
+            ball.SetSprintDribbleInput(sprint, characterActionDirection);
 
-        actionRouter?.Process(inputReader, actionDirection);
+        actionRouter?.Process(inputReader, characterActionDirection, ballAimDirection);
     }
 
     public static Vector2 BuildMoveInput(bool leftPressed, bool rightPressed, bool downPressed, bool upPressed)

@@ -10,6 +10,7 @@ public sealed class BallPossessionController
     public float LastAcquireTime { get; private set; } = -999f;
 
     public bool HasBall => ball != null && ball.HasOwner(owner);
+    public bool IsWithinAcquireRange => ball != null && WithinAcquireRange();
 
     public BallPossessionController(PlayerBallHandler owner, BallController ball, BallConfig config)
     {

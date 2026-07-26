@@ -26,6 +26,7 @@ public class PlayerBallHandler : MonoBehaviour
     private BallConfig runtimeConfig;
 
     public bool HasBall => possession != null && possession.HasBall;
+    public bool IsWithinAcquireRange => possession != null && possession.IsWithinAcquireRange;
     public bool IsCharging => interaction != null && interaction.IsCharging;
     public float ChargeAmount01 => interaction != null ? interaction.ChargeAmount01(Time.time) : 0f;
     public bool LastShotWasFirstTouch { get; private set; }
