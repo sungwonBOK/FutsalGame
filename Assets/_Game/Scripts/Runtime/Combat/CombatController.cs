@@ -19,7 +19,7 @@ public class CombatController : MonoBehaviour
     private ThirdPersonActionCamera actionCamera;
     private CombatConfig runtimeConfig;
 
-    private float lastPunchTime = -999f;
+    private readonly CombatActionCooldownTracker actionCooldowns = new CombatActionCooldownTracker();
     private float lastSlideTime = -999f;
     private float slideActiveUntil = -999f;
     private readonly HashSet<CharacterState> hitThisSlide = new HashSet<CharacterState>();
@@ -41,12 +41,17 @@ public class CombatController : MonoBehaviour
     }
 
     public float PunchCooldown => Config.Punch.cooldown;
+    public float CrossPunchCooldown => Config.TryGetAction(CombatActionId.CrossPunch, out CombatActionDefinition crossPunch)
+        ? crossPunch.cooldown
+        : 0f;
     public float SlideCooldown => Config.Tackle.cooldown;
-    public float PunchRemaining => Mathf.Max(0f, PunchCooldown - (Time.time - lastPunchTime));
+    public float PunchRemaining => actionCooldowns.GetRemaining(CombatActionId.BasicPunch, Time.time, PunchCooldown);
+    public float CrossPunchRemaining => actionCooldowns.GetRemaining(CombatActionId.CrossPunch, Time.time, CrossPunchCooldown);
     public float SlideRemaining => Mathf.Max(0f, SlideCooldown - (Time.time - lastSlideTime));
     public float PunchCooldown01 => Mathf.Clamp01(PunchRemaining / Mathf.Max(0.0001f, PunchCooldown));
     public float SlideCooldown01 => Mathf.Clamp01(SlideRemaining / Mathf.Max(0.0001f, SlideCooldown));
     public bool IsPunchReady => PunchRemaining <= 0f;
+    public bool IsCrossPunchReady => CrossPunchRemaining <= 0f;
     public bool IsSlideReady => SlideRemaining <= 0f;
     public bool IsSliding => Time.time < slideActiveUntil;
     public float LastPunchRejectedTime { get; private set; } = -999f;
@@ -87,14 +92,13 @@ public class CombatController : MonoBehaviour
             return;
 
         CombatConfig.PunchSettings punch = Config.Punch;
-        if (Time.time - lastPunchTime < punch.cooldown)
+        if (!actionCooldowns.TryConsume(CombatActionId.BasicPunch, Time.time, punch.cooldown))
         {
             LastPunchRejectedTime = Time.time;
             return;
         }
 
         Vector3 lockedDirection = ResolveCombatDirection(actionDirection);
-        lastPunchTime = Time.time;
         if (anim != null)
             anim.PlayPunch();
 
@@ -119,6 +123,45 @@ public class CombatController : MonoBehaviour
 
         if (nearest != null)
             Hit(nearest, punch.knockbackForce, punch.hitStunTime);
+    }
+
+    public void CrossPunch(Vector3 actionDirection)
+    {
+        if (state != null && state.IsStunned)
+            return;
+        if (locomotion != null && locomotion.IsDodging)
+            return;
+
+        if (!Config.TryGetAction(CombatActionId.CrossPunch, out CombatActionDefinition crossPunch))
+            return;
+        if (!actionCooldowns.TryConsume(CombatActionId.CrossPunch, Time.time, crossPunch.cooldown))
+            return;
+
+        Vector3 lockedDirection = ResolveCombatDirection(actionDirection);
+        if (anim != null)
+            anim.PlayCrossPunch();
+
+        Vector3 center = transform.position + lockedDirection * crossPunch.range;
+        int count = Physics.OverlapSphereNonAlloc(center, crossPunch.radius, overlapBuffer);
+        CharacterState nearest = null;
+        float nearestDistanceSq = float.PositiveInfinity;
+        for (int i = 0; i < count; i++)
+        {
+            Collider c = overlapBuffer[i];
+            CharacterState victim = c.GetComponentInParent<CharacterState>();
+            if (victim == null || victim == state)
+                continue;
+
+            float distanceSq = (victim.transform.position - center).sqrMagnitude;
+            if (distanceSq < nearestDistanceSq)
+            {
+                nearest = victim;
+                nearestDistanceSq = distanceSq;
+            }
+        }
+
+        if (nearest != null)
+            Hit(nearest, crossPunch.knockbackForce, crossPunch.hitStunTime);
     }
 
     public void SlideTackle()
@@ -174,7 +217,7 @@ public class CombatController : MonoBehaviour
 
     public void ResetCombatState()
     {
-        lastPunchTime = -999f;
+        actionCooldowns.Clear();
         lastSlideTime = -999f;
         slideActiveUntil = -999f;
         hitThisSlide.Clear();

@@ -141,6 +141,37 @@ public class CombatBallConfigTests
         }
     }
 
+    [Test]
+    public void CombatConfig_DefaultCrossPunchMatchesBasicPunchButUsesDoubleAnimationSpeed()
+    {
+        CombatConfig config = ScriptableObject.CreateInstance<CombatConfig>();
+
+        try
+        {
+            Assert.That(config.TryGetAction(CombatActionId.BasicPunch, out CombatActionDefinition basic), Is.True);
+            Assert.That(config.TryGetAction(CombatActionId.CrossPunch, out CombatActionDefinition cross), Is.True);
+            Assert.That(cross.cooldown, Is.EqualTo(basic.cooldown));
+            Assert.That(cross.range, Is.EqualTo(basic.range));
+            Assert.That(cross.knockbackForce, Is.EqualTo(basic.knockbackForce));
+            Assert.That(cross.animationSpeed, Is.EqualTo(2f));
+            Assert.That(cross.releaseBallOnHit, Is.True);
+        }
+        finally
+        {
+            Object.DestroyImmediate(config);
+        }
+    }
+
+    [Test]
+    public void CombatActionCooldownTracker_TracksEachActionIndependently()
+    {
+        CombatActionCooldownTracker tracker = new CombatActionCooldownTracker();
+
+        Assert.That(tracker.TryConsume(CombatActionId.BasicPunch, 10f, 1.2f), Is.True);
+        Assert.That(tracker.TryConsume(CombatActionId.CrossPunch, 10f, 1.2f), Is.True);
+        Assert.That(tracker.TryConsume(CombatActionId.BasicPunch, 10.1f, 1.2f), Is.False);
+    }
+
     private static void SetPrivateField(object target, string fieldName, object value)
     {
         target.GetType()

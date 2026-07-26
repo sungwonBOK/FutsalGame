@@ -22,6 +22,7 @@ public class CharacterAnimator : MonoBehaviour
     private static readonly int PShoot = Animator.StringToHash("Shoot");
     private static readonly int PSlide = Animator.StringToHash("Slide");
     private static readonly int PPunch = Animator.StringToHash("Punch");
+    private static readonly int PCrossPunch = Animator.StringToHash("CrossPunch");
     private static readonly int PStunned = Animator.StringToHash("IsStunned");
 
     private void Awake()
@@ -52,4 +53,5 @@ public class CharacterAnimator : MonoBehaviour
     public void PlayShoot() { if (animator != null) animator.SetTrigger(PShoot); }
     public void PlaySlide() { if (animator != null) animator.SetTrigger(PSlide); }
     public void PlayPunch() { if (animator != null) animator.SetTrigger(PPunch); }
+    public void PlayCrossPunch() { if (animator != null) animator.SetTrigger(PCrossPunch); }
 }

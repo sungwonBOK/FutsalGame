@@ -108,9 +108,18 @@ public sealed class ContextualPlayerActionRouter
                 possessionContext.BeginCombatProtection(Time.time);
             }
         }
-        else if (secondary.WasPressed && possessionContext.HasPossessionContext && !mouseActionsBlocked)
+        else if (secondary.WasPressed)
         {
-            BeginChargeInput(BallChargeAction.Shot, ChargeInputButton.Secondary);
+            if (possessionContext.HasPossessionContext)
+            {
+                if (!mouseActionsBlocked)
+                    BeginChargeInput(BallChargeAction.Shot, ChargeInputButton.Secondary);
+            }
+            else
+            {
+                combat?.CrossPunch(characterActionDirection);
+                possessionContext.BeginCombatProtection(Time.time);
+            }
         }
     }
 

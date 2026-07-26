@@ -74,6 +74,13 @@ public class CombatConfig : ScriptableObject
     [Header("Punch")]
     public PunchSettings Punch = new PunchSettings(0f, 0f, 0f, 1.3f, 0.7f, 1.2f, 8f, 1f);
 
+    [Header("Action Catalog")]
+    public CombatActionDefinition[] Actions =
+    {
+        new CombatActionDefinition(CombatActionId.BasicPunch, 1.2f, 1.3f, 0.7f, 8f, 1f, true, 6f, "Punch", 1f),
+        new CombatActionDefinition(CombatActionId.CrossPunch, 1.2f, 1.3f, 0.7f, 8f, 1f, true, 6f, "CrossPunch", 2f)
+    };
+
     [Header("Tackle")]
     public TackleSettings Tackle = new TackleSettings(0f, 0.35f, 0f, 4.2f, 0.8f, 3f, 8f, 1f, 6f);
 
@@ -81,4 +88,38 @@ public class CombatConfig : ScriptableObject
     public AssistSettings Assist = new AssistSettings(2f, 30f, 0.18f);
 
     public float TackleVelocity => Tackle.distance / Mathf.Max(0.0001f, Tackle.activeTime);
+
+    public bool TryGetAction(CombatActionId id, out CombatActionDefinition definition)
+    {
+        if (Actions != null)
+        {
+            foreach (CombatActionDefinition action in Actions)
+            {
+                if (action.id == id)
+                {
+                    definition = action;
+                    return true;
+                }
+            }
+        }
+
+        if (id == CombatActionId.CrossPunch)
+        {
+            definition = new CombatActionDefinition(
+                CombatActionId.CrossPunch,
+                Punch.cooldown,
+                Punch.range,
+                Punch.radius,
+                Punch.knockbackForce,
+                Punch.hitStunTime,
+                true,
+                Tackle.ballKnockForce,
+                "CrossPunch",
+                2f);
+            return true;
+        }
+
+        definition = default;
+        return false;
+    }
 }
