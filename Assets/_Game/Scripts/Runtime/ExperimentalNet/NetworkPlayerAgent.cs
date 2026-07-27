@@ -1,4 +1,5 @@
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
 
 /// <summary>
@@ -30,6 +31,7 @@ public class NetworkPlayerAgent : NetworkBehaviour
 
     private PlayerInput playerInput;
     private SimpleAIController aiController;
+    private CharacterMotor motor;
     private MaterialPropertyBlock propertyBlock;
 
     /// <summary>이 선수의 팀 (0 = Blue, 1 = Red).</summary>
@@ -45,6 +47,7 @@ public class NetworkPlayerAgent : NetworkBehaviour
     {
         playerInput = GetComponent<PlayerInput>();
         aiController = GetComponent<SimpleAIController>();
+        motor = GetComponent<CharacterMotor>();
 
         // 정체가 정해지기 전에 잘못 움직이지 않도록 둘 다 꺼두고 시작한다.
         if (playerInput != null) playerInput.enabled = false;
@@ -106,8 +109,13 @@ public class NetworkPlayerAgent : NetworkBehaviour
             }
         }
 
+        // 이동은 소유자가 시뮬레이션하고 나머지는 트랜스폼을 복제받는다.
+        // 비소유 인스턴스에서 모터가 Rigidbody를 건드리면 복제된 위치와 싸우게 된다.
+        if (motor != null)
+            motor.enabled = IsOwner;
+
         ApplyTeamColor();
-        BindLocalCamera();
+        BindLocalPresentation();
     }
 
     private void ApplyTeamColor()
@@ -131,17 +139,31 @@ public class NetworkPlayerAgent : NetworkBehaviour
         }
     }
 
-    /// <summary>내가 조종하는 선수라면 씬 카메라가 나를 따라오게 한다.</summary>
-    private void BindLocalCamera()
+    /// <summary>
+    /// 내가 조종하는 선수라면 카메라와 HUD가 나를 보게 한다.
+    /// 씬에 미리 놓인 카메라/HUD는 오프라인 캐릭터를 가리키고 있으므로 여기서 갈아끼운다.
+    /// </summary>
+    private void BindLocalPresentation()
     {
-        if (!IsLocalHumanPlayer || Camera.main == null) return;
+        if (!IsLocalHumanPlayer) return;
 
-        ThirdPersonActionCamera actionCamera = Camera.main.GetComponent<ThirdPersonActionCamera>();
-        if (actionCamera == null) return;
+        if (Camera.main != null)
+        {
+            ThirdPersonActionCamera actionCamera = Camera.main.GetComponent<ThirdPersonActionCamera>();
+            if (actionCamera != null)
+            {
+                Transform ball = BallController.ActiveBall != null ? BallController.ActiveBall.transform : null;
+                actionCamera.SetTargets(transform, GetComponent<Rigidbody>(), ball);
+            }
+        }
 
-        Rigidbody body = GetComponent<Rigidbody>();
-        Transform ball = BallController.ActiveBall != null ? BallController.ActiveBall.transform : null;
-        actionCamera.SetTargets(transform, body, ball);
+        AbilityCooldownUI cooldownUI = FindAnyObjectByType<AbilityCooldownUI>();
+        if (cooldownUI != null)
+            cooldownUI.SetTarget(GetComponent<CombatController>());
+
+        ChargeGaugeUI chargeUI = FindAnyObjectByType<ChargeGaugeUI>();
+        if (chargeUI != null)
+            chargeUI.SetTarget(GetComponent<PlayerBallHandler>());
     }
 
     /// <summary>리셋(킥오프/득점 후) 대상으로 경기 매니저에 등록한다.</summary>
@@ -149,5 +171,38 @@ public class NetworkPlayerAgent : NetworkBehaviour
     {
         if (GameManager.Instance != null)
             GameManager.Instance.RegisterCharacter(transform, transform.position, transform.rotation);
+    }
+
+    // ---------------- 리셋(순간이동) ----------------
+
+    /// <summary>
+    /// 이 선수를 지정 위치로 되돌린다. 서버가 호출한다.
+    ///
+    /// 이동은 소유자 권한이라 서버가 남의 캐릭터를 직접 옮겨봐야 곧 덮어써진다.
+    /// 그래서 실제 이동은 소유자에게 시켜야 한다.
+    /// </summary>
+    public void ServerRequestTeleport(Vector3 position, Quaternion rotation)
+    {
+        if (!IsServer || !IsSpawned) return;
+
+        TeleportRpc(position, rotation);
+    }
+
+    [Rpc(SendTo.Owner)]
+    private void TeleportRpc(Vector3 position, Quaternion rotation)
+    {
+        Rigidbody body = GetComponent<Rigidbody>();
+        if (body != null && !body.isKinematic)
+        {
+            body.linearVelocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+        }
+
+        // 보간 때문에 이전 위치에서 미끄러지듯 오는 것을 막고 즉시 옮긴다.
+        NetworkTransform networkTransform = GetComponent<NetworkTransform>();
+        if (networkTransform != null)
+            networkTransform.Teleport(position, rotation, transform.localScale);
+        else
+            transform.SetPositionAndRotation(position, rotation);
     }
 }

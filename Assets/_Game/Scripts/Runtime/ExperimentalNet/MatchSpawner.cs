@@ -49,7 +49,7 @@ public class MatchSpawner : MonoBehaviour
         }
 
         DespawnAll();
-        DisableOfflineObjects();
+        PrepareForNetworkMatch();
 
         // 팀별로 몇 번째 선수인지 세어 스폰 위치를 나눠준다.
         int blueCount = 0;
@@ -127,7 +127,11 @@ public class MatchSpawner : MonoBehaviour
         spawnedPlayers.Clear();
     }
 
-    private void DisableOfflineObjects()
+    /// <summary>
+    /// 씬에 고정 배치된 오프라인 캐릭터를 끈다. 스폰된 선수와 섞이지 않게 하려는 것이므로
+    /// 서버뿐 아니라 모든 클라이언트에서 호출해야 한다.
+    /// </summary>
+    public void PrepareForNetworkMatch()
     {
         if (offlineOnlyObjects == null) return;
         foreach (GameObject target in offlineOnlyObjects)

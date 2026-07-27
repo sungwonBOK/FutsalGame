@@ -364,6 +364,19 @@ public class GameManager : MonoBehaviour
     {
         if (t == null) return;
 
+        // 네트워크 선수는 이동 권한이 소유자에게 있으므로 여기서 직접 옮기면 곧 덮어써진다.
+        // 서버가 소유자에게 이동을 지시하고, 클라이언트는 자기 차례를 기다린다.
+        NetworkPlayerAgent agent = t.GetComponent<NetworkPlayerAgent>();
+        if (agent != null && agent.IsSpawned)
+            agent.ServerRequestTeleport(pos, rot);
+        else
+            ApplyTransformReset(t, pos, rot);
+
+        ClearCharacterState(t);
+    }
+
+    private void ApplyTransformReset(Transform t, Vector3 pos, Quaternion rot)
+    {
         Rigidbody rb = t.GetComponent<Rigidbody>();
         if (rb != null)
         {
@@ -372,7 +385,11 @@ public class GameManager : MonoBehaviour
         }
         t.position = pos;
         t.rotation = rot;
+    }
 
+    /// <summary>기절·이동·전투·입력 등 로컬 상태를 초기화한다(트랜스폼과 달리 어디서 돌아도 안전).</summary>
+    private void ClearCharacterState(Transform t)
+    {
         CharacterState cs = t.GetComponent<CharacterState>();
         if (cs != null) cs.ResetState(); // 기절 등 초기화
 

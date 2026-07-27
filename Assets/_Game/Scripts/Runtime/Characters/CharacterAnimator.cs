@@ -3,20 +3,29 @@ using UnityEngine;
 /// <summary>
 /// 게임 로직과 Animator를 잇는 브리지. 게임 로직(힘/판정/타이밍)은 건드리지 않고,
 /// 상태 값만 읽어 Animator 파라미터를 갱신하거나, 액션 시점에 트리거를 쏜다.
-///  - Speed(float)     : Rigidbody 수평 속도 (Idle/Run 전환용) — 매 프레임 폴링
+///  - Speed(float)     : 실제 수평 이동 속도 (Idle/Run 전환용) — 매 프레임 폴링
 ///  - IsStunned(bool)  : CharacterState.IsStunned — 매 프레임 폴링
 ///  - Shoot/Slide/Punch(trigger) : 액션 스크립트가 PlayShoot/PlaySlide/PlayPunch 호출
 /// 플레이어와 AI가 동일하게 사용한다.
+///
+/// 속도는 Rigidbody가 아니라 실제 위치 변화에서 구한다. 온라인 경기에서 다른 사람의 캐릭터는
+/// 물리로 움직이지 않고 네트워크로 위치만 복제받기 때문에(Rigidbody 속도가 0),
+/// 위치 변화를 봐야 원격 캐릭터도 달리는 모션이 나온다.
 /// </summary>
 [RequireComponent(typeof(CharacterState))]
 public class CharacterAnimator : MonoBehaviour
 {
     [Tooltip("대상 Animator. 비우면 자식에서 자동 검색.")]
     [SerializeField] private Animator animator;
-    [Tooltip("속도 계산에 쓸 Rigidbody. 비우면 이 오브젝트에서 검색.")]
-    [SerializeField] private Rigidbody body;
+    [Tooltip("속도 값 평활화 정도(초). 클수록 부드럽지만 반응이 느리다.")]
+    [SerializeField] private float speedSmoothing = 0.08f;
+
+    /// <summary>한 프레임 이동량이 이 값을 넘으면 순간이동으로 본다(제곱 거리).</summary>
+    private const float TeleportSqrThreshold = 4f;
 
     private CharacterState state;
+    private Vector3 lastPosition;
+    private float smoothedSpeed;
 
     private static readonly int PSpeed = Animator.StringToHash("Speed");
     private static readonly int PShoot = Animator.StringToHash("Shoot");
@@ -28,25 +37,48 @@ public class CharacterAnimator : MonoBehaviour
     {
         state = GetComponent<CharacterState>();
         if (animator == null) animator = GetComponentInChildren<Animator>();
-        if (body == null) body = GetComponent<Rigidbody>();
+        lastPosition = transform.position;
+    }
+
+    private void OnEnable()
+    {
+        // 순간이동(스폰/킥오프 리셋) 직후 속도가 튀지 않도록 기준점을 다시 잡는다.
+        lastPosition = transform.position;
+        smoothedSpeed = 0f;
     }
 
     private void Update()
     {
         if (animator == null) return;
 
-        // 수평 속도 → Speed
-        float speed = 0f;
-        if (body != null)
-        {
-            Vector3 v = body.linearVelocity;
-            v.y = 0f;
-            speed = v.magnitude;
-        }
-        animator.SetFloat(PSpeed, speed);
+        animator.SetFloat(PSpeed, MeasureSpeed());
 
         // 기절 상태 → IsStunned
         animator.SetBool(PStunned, state != null && state.IsStunned);
+    }
+
+    /// <summary>실제로 움직인 거리로 수평 속도를 구한다(로컬·원격 캐릭터 모두 동일하게 동작).</summary>
+    private float MeasureSpeed()
+    {
+        Vector3 position = transform.position;
+        Vector3 delta = position - lastPosition;
+        lastPosition = position;
+
+        float deltaTime = Time.deltaTime;
+        if (deltaTime <= 0f) return smoothedSpeed; // 일시정지(timeScale 0) 중에는 값을 유지
+
+        delta.y = 0f;
+        float rawSpeed = delta.magnitude / deltaTime;
+
+        // 리셋 등으로 한 프레임에 크게 순간이동하면 속도로 치지 않는다.
+        if (delta.sqrMagnitude > TeleportSqrThreshold)
+            rawSpeed = 0f;
+
+        smoothedSpeed = speedSmoothing > 0f
+            ? Mathf.Lerp(smoothedSpeed, rawSpeed, deltaTime / speedSmoothing)
+            : rawSpeed;
+
+        return smoothedSpeed;
     }
 
     public void PlayShoot() { if (animator != null) animator.SetTrigger(PShoot); }
