@@ -25,6 +25,7 @@ public static class NetworkMatchSetupTool
         GameObject playerPrefab = SetupNetPlayerPrefab();
         SetupSceneObjects(playerPrefab);
         SetupBall();
+        SetupMatchState();
 
         EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
         Debug.Log("[NetworkMatchSetupTool] 온라인 경기 배선을 마쳤습니다. 씬을 저장하세요.");
@@ -127,6 +128,27 @@ public static class NetworkMatchSetupTool
 
         EditorUtility.SetDirty(ballObject);
         Debug.Log("[NetworkMatchSetupTool] 공에 네트워크 컴포넌트를 확인/추가했습니다.", ballObject);
+    }
+
+    /// <summary>
+    /// 경기 상태(점수·시간·킥오프)를 복제하는 컴포넌트를 GameManager에 붙인다.
+    /// 씬에 원래 있는 오브젝트이므로 in-scene NetworkObject로 스폰된다.
+    /// </summary>
+    private static void SetupMatchState()
+    {
+        GameManager match = Object.FindAnyObjectByType<GameManager>();
+        if (match == null)
+        {
+            Debug.LogWarning("[NetworkMatchSetupTool] 씬에서 GameManager를 찾지 못했습니다.");
+            return;
+        }
+
+        GameObject matchObject = match.gameObject;
+        EnsureComponent<NetworkObject>(matchObject);
+        EnsureComponent<NetworkMatchState>(matchObject);
+
+        EditorUtility.SetDirty(matchObject);
+        Debug.Log("[NetworkMatchSetupTool] GameManager에 경기 상태 복제 컴포넌트를 확인/추가했습니다.", matchObject);
     }
 
     private static T EnsureComponent<T>(GameObject target) where T : Component

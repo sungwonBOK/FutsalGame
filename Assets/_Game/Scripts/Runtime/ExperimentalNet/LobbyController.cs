@@ -89,8 +89,9 @@ public class LobbyController : NetworkBehaviour
     }
 
     /// <summary>
-    /// 호스트가 경기를 시작하면 클라이언트도 같은 시점에 경기 화면으로 넘어가야 한다.
-    /// (선수 스폰은 서버가 하고, 클라는 오프라인 캐릭터를 끄고 자기 쪽 경기 흐름을 연다.)
+    /// 호스트가 경기를 시작하면 클라이언트도 경기 화면으로 넘어간다.
+    /// 경기 흐름(카운트다운·점수·시간)은 서버가 굴려서 복제하므로, 여기서는
+    /// 씬에 고정된 오프라인 캐릭터만 치우면 된다.
     /// </summary>
     private void HandleMatchStartedChanged(bool previous, bool current)
     {
@@ -98,9 +99,6 @@ public class LobbyController : NetworkBehaviour
 
         if (MatchSpawner.Instance != null)
             MatchSpawner.Instance.PrepareForNetworkMatch();
-
-        if (GameManager.Instance != null)
-            GameManager.Instance.BeginMatch();
     }
 
     private void HandleClientDisconnect(ulong clientId)

@@ -127,12 +127,21 @@ public class GameManager : MonoBehaviour
     /// <summary>메뉴/로비에서 경기를 시작시킬 때 호출. (autoStartMatch를 끈 경우)</summary>
     public void BeginMatch()
     {
+        // 온라인에서는 경기 흐름을 서버 한 곳에서만 굴린다.
+        // 클라이언트는 복제받은 상태를 반영하기만 한다(ApplyReplicatedState).
+        if (!NetworkMatchState.LocalHasAuthority)
+            return;
+
         StopAllCoroutines();
         StartCoroutine(NewMatchRoutine());
     }
 
     private void Update()
     {
+        // 경기 진행(시간·일시정지·재시작)은 흐름을 굴리는 쪽에서만 판단한다.
+        if (!NetworkMatchState.LocalHasAuthority)
+            return;
+
         // Pause: 일시정지/재개 토글 (종료 화면에서는 무시).
         if (inputReader != null &&
             inputReader.ReadButton(GameplayInputAction.Pause).WasPressed &&
@@ -161,11 +170,19 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    /// <summary>일시정지/재개 토글. Time.timeScale로 게임 전체를 멈춘다.</summary>
+    /// <summary>
+    /// 일시정지/재개 토글.
+    /// 오프라인에서는 Time.timeScale로 전부 멈추지만, 온라인에서는 타임스케일을 건드리지 않는다.
+    /// 내 쪽 시간만 멈춰봐야 남들은 계속 움직이고, 네트워크 보간까지 흔들리기 때문이다.
+    /// 대신 복제되는 일시정지 상태가 PlayActive를 통해 모두의 조작을 잠근다.
+    /// </summary>
     private void TogglePause()
     {
         IsPaused = !IsPaused;
-        Time.timeScale = IsPaused ? 0f : 1f;
+
+        if (NetworkMatchState.Instance == null || !NetworkMatchState.Instance.IsSpawned)
+            Time.timeScale = IsPaused ? 0f : 1f;
+
         RefreshPlayActive();
     }
 
@@ -173,6 +190,28 @@ public class GameManager : MonoBehaviour
     private void RefreshPlayActive()
     {
         PlayActive = (State == MatchState.Playing) && !IsPaused;
+    }
+
+    /// <summary>
+    /// 서버가 복제해준 경기 상태를 그대로 반영한다(클라이언트 전용).
+    /// 점수·시간·중앙 메시지는 MatchUI가 읽어 그리고, PlayActive는 조작 잠금에 쓰인다.
+    /// </summary>
+    public void ApplyReplicatedState(
+        MatchState replicatedState,
+        int replicatedPlayerScore,
+        int replicatedOpponentScore,
+        float replicatedTimeRemaining,
+        bool replicatedPaused,
+        string replicatedCenterMessage)
+    {
+        State = replicatedState;
+        PlayerScore = replicatedPlayerScore;
+        OpponentScore = replicatedOpponentScore;
+        TimeRemaining = replicatedTimeRemaining;
+        IsPaused = replicatedPaused;
+        CenterMessage = replicatedCenterMessage ?? "";
+
+        RefreshPlayActive();
     }
 
     // --- 경기 흐름 ---
@@ -224,7 +263,19 @@ public class GameManager : MonoBehaviour
         if (playerScored) PlayerScore++;
         else OpponentScore++;
 
-        // 연출: 골 축하 파티클(득점 팀 색으로 tint) + 소리 (기존 그대로).
+        // 득점 연출은 한 번만 터지는 것이라 상태 복제로는 전달되지 않는다. 서버가 따로 알린다.
+        if (NetworkMatchState.Instance != null && NetworkMatchState.Instance.IsSpawned)
+            NetworkMatchState.Instance.BroadcastGoalPresentation(goalPos, playerScored);
+        else
+            PlayGoalPresentationLocal(goalPos, playerScored);
+
+        bool matchPoint = targetScore > 0 && (PlayerScore >= targetScore || OpponentScore >= targetScore);
+        StartCoroutine(GoalRoutine(matchPoint));
+    }
+
+    /// <summary>득점 연출(축하 파티클·환호·카메라 흔들림)을 이 클라이언트에서만 재생한다.</summary>
+    public void PlayGoalPresentationLocal(Vector3 goalPos, bool playerScored)
+    {
         if (goalEffectPrefab != null)
         {
             GameObject fx = Instantiate(goalEffectPrefab, goalPos + Vector3.up * 1f, Quaternion.identity);
@@ -237,9 +288,6 @@ public class GameManager : MonoBehaviour
         }
         if (AudioManager.Instance != null) AudioManager.Instance.PlayGoal();
         if (actionCamera != null) actionCamera.AddShake(0.35f);
-
-        bool matchPoint = targetScore > 0 && (PlayerScore >= targetScore || OpponentScore >= targetScore);
-        StartCoroutine(GoalRoutine(matchPoint));
     }
 
     /// <summary>"GOAL!" 표시 → (네트 연출) → 킥오프 카운트다운 또는 경기 종료.</summary>
