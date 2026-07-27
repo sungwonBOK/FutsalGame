@@ -287,6 +287,11 @@ public class GameManager : MonoBehaviour
     private void ResetBall()
     {
         PlayerBallHandler.ClearPossession();
+
+        // 온라인에서는 공을 서버만 움직인다. 클라가 같이 옮기면 복제 위치와 싸운다.
+        if (!NetworkBall.LocalHasAuthority)
+            return;
+
         if (ball != null)
         {
             if (ballCollider != null) ballCollider.enabled = true;
@@ -300,6 +305,10 @@ public class GameManager : MonoBehaviour
 
     private void EnforceBallBounds()
     {
+        // 공이 코트를 벗어났는지 판정하고 되돌리는 것도 서버 몫이다.
+        if (!NetworkBall.LocalHasAuthority)
+            return;
+
         if (ball == null || PlayerBallHandler.CurrentOwner != null)
             return;
 

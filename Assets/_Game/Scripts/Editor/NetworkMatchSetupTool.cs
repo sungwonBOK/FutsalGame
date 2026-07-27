@@ -1,4 +1,5 @@
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -23,6 +24,7 @@ public static class NetworkMatchSetupTool
     {
         GameObject playerPrefab = SetupNetPlayerPrefab();
         SetupSceneObjects(playerPrefab);
+        SetupBall();
 
         EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
         Debug.Log("[NetworkMatchSetupTool] 온라인 경기 배선을 마쳤습니다. 씬을 저장하세요.");
@@ -101,6 +103,38 @@ public static class NetworkMatchSetupTool
         }
 
         spawnerSo.ApplyModifiedProperties();
+    }
+
+    /// <summary>
+    /// 씬의 공을 네트워크로 복제되게 만든다.
+    /// 위치는 서버 권한 NetworkTransform이 복제하고, NetworkRigidbody가 클라 쪽 물리를 꺼준다
+    /// (안 그러면 클라에서 굴러가는 공과 복제된 위치가 서로 싸운다).
+    /// </summary>
+    private static void SetupBall()
+    {
+        BallController ball = Object.FindAnyObjectByType<BallController>();
+        if (ball == null)
+        {
+            Debug.LogWarning("[NetworkMatchSetupTool] 씬에서 공(BallController)을 찾지 못했습니다.");
+            return;
+        }
+
+        GameObject ballObject = ball.gameObject;
+        EnsureComponent<NetworkObject>(ballObject);
+        EnsureComponent<NetworkTransform>(ballObject);   // 기본값이 서버 권한이다
+        EnsureComponent<NetworkRigidbody>(ballObject);
+        EnsureComponent<NetworkBall>(ballObject);
+
+        EditorUtility.SetDirty(ballObject);
+        Debug.Log("[NetworkMatchSetupTool] 공에 네트워크 컴포넌트를 확인/추가했습니다.", ballObject);
+    }
+
+    private static T EnsureComponent<T>(GameObject target) where T : Component
+    {
+        T existing = target.GetComponent<T>();
+        if (existing != null) return existing;
+
+        return Undo.AddComponent<T>(target);
     }
 
     private static void AssignIfEmpty(SerializedProperty property, Object value)

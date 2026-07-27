@@ -13,6 +13,20 @@ using UnityEngine;
 /// 팀/AI 여부는 서버가 스폰 직후 NetworkVariable에 써서 모든 클라로 복제한다.
 /// 클라는 값이 도착하는 시점이 한 틱 늦을 수 있으므로 OnValueChanged로도 다시 반영한다.
 /// </summary>
+/// <summary>클라이언트가 서버에 요청하는 공 동작의 종류.</summary>
+public enum BallActionKind : byte
+{
+    Shoot,
+    Pass,
+    StartChargeShot,
+    StartChargePass,
+    ReleaseChargeShot,
+    ReleaseChargePass,
+    CancelCharge,
+    SprintDribbleOn,
+    SprintDribbleOff,
+}
+
 [RequireComponent(typeof(NetworkObject))]
 public class NetworkPlayerAgent : NetworkBehaviour
 {
@@ -32,6 +46,7 @@ public class NetworkPlayerAgent : NetworkBehaviour
     private PlayerInput playerInput;
     private SimpleAIController aiController;
     private CharacterMotor motor;
+    private PlayerBallHandler ballHandler;
     private MaterialPropertyBlock propertyBlock;
 
     /// <summary>이 선수의 팀 (0 = Blue, 1 = Red).</summary>
@@ -48,6 +63,7 @@ public class NetworkPlayerAgent : NetworkBehaviour
         playerInput = GetComponent<PlayerInput>();
         aiController = GetComponent<SimpleAIController>();
         motor = GetComponent<CharacterMotor>();
+        ballHandler = GetComponent<PlayerBallHandler>();
 
         // 정체가 정해지기 전에 잘못 움직이지 않도록 둘 다 꺼두고 시작한다.
         if (playerInput != null) playerInput.enabled = false;
@@ -171,6 +187,34 @@ public class NetworkPlayerAgent : NetworkBehaviour
     {
         if (GameManager.Instance != null)
             GameManager.Instance.RegisterCharacter(transform, transform.position, transform.rotation);
+    }
+
+    // ---------------- 공 동작 요청/연출 ----------------
+
+    /// <summary>
+    /// 내가 조종하는 선수의 공 동작을 서버에 요청한다.
+    /// 공을 실제로 움직이는 것은 서버뿐이므로, 클라이언트는 "무엇을 하려는지"만 보낸다.
+    /// </summary>
+    [Rpc(SendTo.Server)]
+    public void RequestBallActionRpc(BallActionKind kind, Vector3 direction)
+    {
+        if (ballHandler != null)
+            ballHandler.ExecuteRequestedAction(kind, direction);
+    }
+
+    /// <summary>서버가 슛 연출을 모든 클라이언트에서 재생시킨다.</summary>
+    public void BroadcastShotPresentation(Vector3 direction)
+    {
+        if (!IsServer || !IsSpawned) return;
+
+        ShotPresentationRpc(direction);
+    }
+
+    [Rpc(SendTo.Everyone)]
+    private void ShotPresentationRpc(Vector3 direction)
+    {
+        if (ballHandler != null)
+            ballHandler.PlayShotPresentationLocal(direction);
     }
 
     // ---------------- 리셋(순간이동) ----------------
