@@ -5,6 +5,7 @@
     "Unity.InputSystem",
     "Unity.Cinemachine",
     "Unity.Netcode.Runtime",
+    "Unity.Collections",
     "Unity.Services.Core",
     "Unity.Services.Authentication",
     "Unity.Services.Relay",
