@@ -5,6 +5,10 @@
     "Unity.InputSystem",
     "Unity.Cinemachine",
     "Unity.Netcode.Runtime",
+    "Unity.Services.Core",
+    "Unity.Services.Authentication",
+    "Unity.Services.Relay",
+    "Unity.Networking.Transport",
     "GUID:f2d49d9fa7e7eb3418e39723a7d3b92f"
   ],
   "includePlatforms": [],

@@ -1,18 +1,23 @@
 using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
 
 /// <summary>
-/// 초기 화면 → LAN 접속 → 방(로비) 흐름을 담당한다.
+/// 초기 화면 → 온라인 접속 → 방(로비) 흐름을 담당한다.
 /// 로비는 팀별 슬롯을 자유롭게 추가/삭제하고, 각 칸을 [빈칸 / AI / 접속한 사람]으로 배치한다(3v3 고정 아님).
 /// 슬롯 구성은 NetworkList로 동기화되어 호스트가 편집하고 모든 클라가 본다.
 ///
-/// 씬의 in-scene NetworkObject에 붙인다(호스트 시작 시 스폰). OnGUI는 스폰 전에도 돌기 때문에
-/// 접속 전에는 메뉴/LAN UI를, 접속 후(IsSpawned)에는 방 UI를 그린다.
+/// 접속은 Unity Relay 기반이다: 호스트가 방을 만들면 조인코드가 나오고, 친구는 그 코드로 붙는다.
+/// 포트포워딩이 필요 없어 서로 다른 네트워크(인터넷)에서도 연결된다.
+/// 같은 공유기 안에서 빠르게 시험할 때를 위해 직접 IP(LAN) 경로도 남겨둔다.
 ///
-/// NOTE: 구성한 팀을 실제 네트워크 경기로 스폰/동기화하는 것은 게임로직 네트워크화(다음 단계)에서 연결한다.
-/// 지금 "게임 시작"은 기존 경기(GameManager.BeginMatch)를 시작하고 로비를 닫는다.
+/// 씬의 in-scene NetworkObject에 붙인다(호스트 시작 시 스폰). OnGUI는 스폰 전에도 돌기 때문에
+/// 접속 전에는 메뉴/접속 UI를, 접속 후(IsSpawned)에는 방 UI를 그린다.
+///
+/// "게임 시작"을 누르면 MatchSpawner가 슬롯 구성대로 선수를 네트워크 스폰하고 경기를 연다.
 /// </summary>
 public enum Occupant : byte { Empty, Human, AI }
 
@@ -29,11 +34,13 @@ public struct TeamSlot : INetworkSerializeByMemcpy, IEquatable<TeamSlot>
 
 public class LobbyController : NetworkBehaviour
 {
-    private enum Screen { Main, Lan, Room }
+    private enum Screen { Main, Online, Lan, Room }
 
     [Header("접속")]
     [SerializeField] private string ipAddress = "127.0.0.1";
     [SerializeField] private ushort port = 7777;
+    [Tooltip("호스트를 제외한 최대 접속 인원. Relay 방 크기를 정한다.")]
+    [SerializeField] private int maxConnections = 9;
 
     [Header("로비 기본값")]
     [Tooltip("호스트 시작 시 팀당 기본 슬롯 수.")]
@@ -47,6 +54,12 @@ public class LobbyController : NetworkBehaviour
 
     private Screen screen = Screen.Main;
     private Vector2 scroll;
+
+    // Relay 접속 상태 (OnGUI는 await를 못 하므로 비동기 결과를 필드로 받아 표시한다).
+    private string joinCodeInput = "";
+    private string hostJoinCode = "";
+    private string statusMessage = "";
+    private bool isConnecting;
 
     // ---------------- 네트워크 수명주기 ----------------
 
@@ -121,8 +134,24 @@ public class LobbyController : NetworkBehaviour
     {
         if (!IsServer) return;
         matchStarted.Value = true;
-        // 기존 경기 시작(placeholder). 팀별 스폰은 다음 단계에서 연결.
+
+        // 슬롯 구성대로 선수를 네트워크 스폰한 뒤 경기를 연다.
+        // 스폰이 먼저여야 킥오프 리셋이 스폰된 선수까지 포함한다.
+        if (MatchSpawner.Instance != null)
+            MatchSpawner.Instance.ServerSpawnTeams(SnapshotSlots());
+        else
+            Debug.LogWarning("[LobbyController] 씬에 MatchSpawner가 없어 선수를 스폰하지 못했습니다.", this);
+
         if (GameManager.Instance != null) GameManager.Instance.BeginMatch();
+    }
+
+    /// <summary>NetworkList를 스폰 로직에 넘기기 위해 일반 리스트로 복사한다.</summary>
+    private List<TeamSlot> SnapshotSlots()
+    {
+        List<TeamSlot> copy = new List<TeamSlot>(slots.Count);
+        for (int i = 0; i < slots.Count; i++)
+            copy.Add(slots[i]);
+        return copy;
     }
 
     private int CountTeam(byte team)
@@ -201,10 +230,17 @@ public class LobbyController : NetworkBehaviour
                 enabled = false;
             }
             GUILayout.Space(10);
-            if (GUILayout.Button("온라인 플레이 (LAN)", GUILayout.Height(48)))
+            if (GUILayout.Button("온라인 플레이", GUILayout.Height(48)))
+                screen = Screen.Online;
+            GUILayout.Space(6);
+            if (GUILayout.Button("직접 IP 접속 (LAN)", GUILayout.Height(32)))
                 screen = Screen.Lan;
         }
-        else // Lan
+        else if (screen == Screen.Online)
+        {
+            DrawOnlineScreen();
+        }
+        else // Lan (같은 공유기 안에서 빠르게 시험할 때)
         {
             GUILayout.Label("호스트 IP (Join 시):");
             ipAddress = GUILayout.TextField(ipAddress, GUILayout.Height(28));
@@ -229,15 +265,125 @@ public class LobbyController : NetworkBehaviour
         GUILayout.EndArea();
     }
 
+    /// <summary>Relay 조인코드로 방을 만들거나 참가하는 화면.</summary>
+    private void DrawOnlineScreen()
+    {
+        GUI.enabled = !isConnecting;
+
+        if (GUILayout.Button("방 만들기 (조인코드 발급)", GUILayout.Height(44)))
+            _ = HostViaRelayAsync();
+
+        GUILayout.Space(12);
+        GUILayout.Label("친구에게 받은 조인코드:");
+        joinCodeInput = GUILayout.TextField(joinCodeInput, 6, GUILayout.Height(28));
+        GUILayout.Space(6);
+        if (GUILayout.Button("코드로 접속", GUILayout.Height(44)))
+            _ = JoinViaRelayAsync();
+
+        GUI.enabled = true;
+
+        GUILayout.Space(10);
+        if (!string.IsNullOrEmpty(hostJoinCode))
+        {
+            GUILayout.Label("<b>내 조인코드: " + hostJoinCode + "</b>",
+                            new GUIStyle(GUI.skin.label) { richText = true });
+            if (GUILayout.Button("코드 복사", GUILayout.Height(26)))
+                GUIUtility.systemCopyBuffer = hostJoinCode;
+        }
+        if (!string.IsNullOrEmpty(statusMessage))
+            GUILayout.Label(statusMessage);
+
+        GUILayout.Space(6);
+        if (!isConnecting && GUILayout.Button("← 뒤로"))
+            screen = Screen.Main;
+    }
+
+    // ---------------- Relay 접속 ----------------
+
+    private async Task HostViaRelayAsync()
+    {
+        if (isConnecting) return;
+        isConnecting = true;
+        statusMessage = "방 만드는 중...";
+        hostJoinCode = "";
+
+        try
+        {
+            hostJoinCode = await RelayConnectionService.CreateAllocationAsync(maxConnections);
+            if (!NetworkManager.Singleton.StartHost())
+            {
+                statusMessage = "호스트 시작에 실패했습니다.";
+                hostJoinCode = "";
+            }
+            else
+            {
+                statusMessage = "친구에게 조인코드를 알려주세요.";
+            }
+        }
+        catch (Exception e)
+        {
+            statusMessage = "방 만들기 실패: " + e.Message;
+            Debug.LogException(e, this);
+        }
+        finally
+        {
+            isConnecting = false;
+        }
+    }
+
+    private async Task JoinViaRelayAsync()
+    {
+        if (isConnecting) return;
+
+        string code = RelayConnectionService.NormalizeJoinCode(joinCodeInput);
+        if (string.IsNullOrEmpty(code))
+        {
+            statusMessage = "조인코드를 입력하세요.";
+            return;
+        }
+
+        isConnecting = true;
+        statusMessage = "접속 중...";
+
+        try
+        {
+            await RelayConnectionService.JoinAllocationAsync(code);
+            if (!NetworkManager.Singleton.StartClient())
+                statusMessage = "접속에 실패했습니다.";
+            else
+                statusMessage = "호스트에 연결했습니다.";
+        }
+        catch (Exception e)
+        {
+            statusMessage = "접속 실패: " + e.Message;
+            Debug.LogException(e, this);
+        }
+        finally
+        {
+            isConnecting = false;
+        }
+    }
+
     private void DrawRoom(NetworkManager nm)
     {
         float w = 720, h = 460;
         Rect area = new Rect((UnityEngine.Screen.width - w) / 2f, (UnityEngine.Screen.height - h) / 2f, w, h);
         GUILayout.BeginArea(area, GUI.skin.box);
 
-        GUILayout.Label("<size=22><b>방 (LAN)</b></size>   " + (IsServer ? "[호스트]" : "[참가자]") +
+        GUILayout.Label("<size=22><b>방</b></size>   " + (IsServer ? "[호스트]" : "[참가자]") +
                         "   접속: " + nm.ConnectedClientsIds.Count + "명   미배치: " + UnassignedHumanCount() + "명",
                         new GUIStyle(GUI.skin.label) { richText = true });
+
+        // 호스트는 방에서도 조인코드를 볼 수 있어야 친구를 뒤늦게 부를 수 있다.
+        if (IsServer && !string.IsNullOrEmpty(hostJoinCode))
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("<b>조인코드: " + hostJoinCode + "</b>",
+                            new GUIStyle(GUI.skin.label) { richText = true }, GUILayout.Width(240));
+            if (GUILayout.Button("복사", GUILayout.Width(60)))
+                GUIUtility.systemCopyBuffer = hostJoinCode;
+            GUILayout.EndHorizontal();
+        }
         GUILayout.Space(6);
 
         scroll = GUILayout.BeginScrollView(scroll, GUILayout.Height(330));

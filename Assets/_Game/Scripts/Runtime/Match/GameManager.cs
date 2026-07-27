@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -70,9 +71,26 @@ public class GameManager : MonoBehaviour
     public string CenterMessage { get; private set; } = "";
 
     // 시작 상태 저장 (리셋용)
-    private Vector3 ballStart, playerStart, opponentStart;
-    private Quaternion playerStartRot, opponentStartRot;
+    private Vector3 ballStart;
     private Collider ballCollider;
+
+    /// <summary>리셋 대상 캐릭터와 그 시작 위치. 오프라인은 씬 배치분, 온라인은 스폰된 선수들이 등록된다.</summary>
+    private readonly struct RegisteredCharacter
+    {
+        public readonly Transform Target;
+        public readonly Vector3 StartPosition;
+        public readonly Quaternion StartRotation;
+
+        public RegisteredCharacter(Transform target, Vector3 startPosition, Quaternion startRotation)
+        {
+            Target = target;
+            StartPosition = startPosition;
+            StartRotation = startRotation;
+        }
+    }
+
+    private readonly List<RegisteredCharacter> registeredCharacters = new List<RegisteredCharacter>();
+
     private ThirdPersonActionCamera actionCamera;
     private bool scoringLocked; // 한 골에 대한 중복 처리 방지
 
@@ -97,8 +115,10 @@ public class GameManager : MonoBehaviour
     {
         // 시작 위치/회전 저장 (리셋에 사용).
         if (ball != null) ballStart = ball.position;
-        if (player != null) { playerStart = player.position; playerStartRot = player.rotation; }
-        if (opponent != null) { opponentStart = opponent.position; opponentStartRot = opponent.rotation; }
+
+        // 씬에 미리 배치된 캐릭터를 리셋 대상으로 등록한다(오프라인 경기 경로).
+        RegisterCharacter(player);
+        RegisterCharacter(opponent);
 
         if (autoStartMatch)
             StartCoroutine(NewMatchRoutine());
@@ -294,11 +314,50 @@ public class GameManager : MonoBehaviour
             ResetBall();
     }
 
-    /// <summary>플레이어와 AI를 시작 위치로 되돌린다.</summary>
+    /// <summary>등록된 모든 캐릭터를 시작 위치로 되돌린다.</summary>
     private void ResetCharacters()
     {
-        ResetCharacter(player, playerStart, playerStartRot);
-        ResetCharacter(opponent, opponentStart, opponentStartRot);
+        for (int i = registeredCharacters.Count - 1; i >= 0; i--)
+        {
+            RegisteredCharacter entry = registeredCharacters[i];
+            if (entry.Target == null)
+            {
+                registeredCharacters.RemoveAt(i); // 파괴된(디스폰된) 선수 정리
+                continue;
+            }
+            ResetCharacter(entry.Target, entry.StartPosition, entry.StartRotation);
+        }
+    }
+
+    /// <summary>현재 위치를 시작 위치로 삼아 리셋 대상에 등록한다(씬 배치 캐릭터용).</summary>
+    private void RegisterCharacter(Transform target)
+    {
+        if (target != null)
+            RegisterCharacter(target, target.position, target.rotation);
+    }
+
+    /// <summary>
+    /// 리셋(킥오프/득점 후) 대상으로 캐릭터를 등록한다.
+    /// 네트워크로 스폰된 선수가 자신의 스폰 위치와 함께 호출한다.
+    /// </summary>
+    public void RegisterCharacter(Transform target, Vector3 startPosition, Quaternion startRotation)
+    {
+        if (target == null) return;
+
+        for (int i = 0; i < registeredCharacters.Count; i++)
+            if (registeredCharacters[i].Target == target) return; // 중복 등록 방지
+
+        registeredCharacters.Add(new RegisteredCharacter(target, startPosition, startRotation));
+    }
+
+    /// <summary>디스폰/파괴된 캐릭터를 리셋 대상에서 제거한다.</summary>
+    public void UnregisterCharacter(Transform target)
+    {
+        if (target == null) return;
+
+        for (int i = registeredCharacters.Count - 1; i >= 0; i--)
+            if (registeredCharacters[i].Target == target)
+                registeredCharacters.RemoveAt(i);
     }
 
     private void ResetCharacter(Transform t, Vector3 pos, Quaternion rot)
