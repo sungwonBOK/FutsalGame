@@ -5,6 +5,14 @@ using UnityEngine;
 public class CameraInputDirectionTests
 {
     [Test]
+    public void SprintBoostTap_RequiresASecondPressWithinTheConfiguredWindow()
+    {
+        Assert.That(PlayerInput.IsSprintBoostTap(10.25f, 10f), Is.True);
+        Assert.That(PlayerInput.IsSprintBoostTap(10.251f, 10f), Is.False);
+        Assert.That(PlayerInput.IsSprintBoostTap(10f, -1f), Is.False);
+    }
+
+    [Test]
     public void BuildMoveInput_CombinesWasdAndArrowsThenClampsDiagonal()
     {
         Vector2 input = PlayerInput.BuildMoveInput(

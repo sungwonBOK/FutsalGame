@@ -17,6 +17,7 @@ public class CharacterAnimator : MonoBehaviour
     [SerializeField] private Rigidbody body;
 
     private CharacterState state;
+    private CharacterLocomotion locomotion;
 
     private static readonly int PSpeed = Animator.StringToHash("Speed");
     private static readonly int PShoot = Animator.StringToHash("Shoot");
@@ -28,6 +29,7 @@ public class CharacterAnimator : MonoBehaviour
     private void Awake()
     {
         state = GetComponent<CharacterState>();
+        locomotion = GetComponent<CharacterLocomotion>();
         if (animator == null) animator = GetComponentInChildren<Animator>();
         if (body == null) body = GetComponent<Rigidbody>();
     }
@@ -45,6 +47,7 @@ public class CharacterAnimator : MonoBehaviour
             speed = v.magnitude;
         }
         animator.SetFloat(PSpeed, speed);
+        animator.speed = locomotion != null && locomotion.IsBurstSprinting ? 1.4f : 1f;
 
         // 기절 상태 → IsStunned
         animator.SetBool(PStunned, state != null && state.IsStunned);

@@ -15,6 +15,7 @@ public class CharacterLocomotion : MonoBehaviour
     private Vector3 actionDirection = Vector3.forward;
     private CharacterMovementProfile activeMovementProfile;
     private bool sprintRequested;
+    private bool burstSprintRequested;
     private bool hasBall;
     private float stamina;
     private float lastStaminaSpendTime = -999f;
@@ -42,6 +43,7 @@ public class CharacterLocomotion : MonoBehaviour
     public CharacterMovementProfile ActiveMovementProfile => activeMovementProfile;
     public float Stamina01 => Config.MaxStamina <= 0f ? 0f : Mathf.Clamp01(stamina / Config.MaxStamina);
     public bool IsSprinting { get; private set; }
+    public bool IsBurstSprinting { get; private set; }
     public bool IsDodging => Time.time < dodgeUntil;
     public float DodgeRemaining => Mathf.Max(0f, Config.DodgeCooldown - (Time.time - lastDodgeTime));
     public float DodgeCooldown01 => Config.DodgeCooldown <= 0f ? 0f : Mathf.Clamp01(DodgeRemaining / Config.DodgeCooldown);
@@ -86,28 +88,31 @@ public class CharacterLocomotion : MonoBehaviour
         ApplyMovement(rawMoveInput, CharacterMovementUtility.ClampPlanar(direction), sprint: false, hasBall: false);
     }
 
-    public void SetPlayerMoveInput(Vector2 input, bool sprint, bool hasBall)
+    public void SetPlayerMoveInput(Vector2 input, bool sprint, bool hasBall, bool burstSprint = false)
     {
         ApplyMovement(
             CharacterMovementUtility.ClampInput(input),
             CharacterMovementUtility.BuildPlanarMoveDirection(input),
             sprint,
-            hasBall);
+            hasBall,
+            burstSprint);
     }
 
-    public void SetPlayerMoveInput(Vector2 input, Vector3 worldMoveDirection, bool sprint, bool hasBall)
+    public void SetPlayerMoveInput(Vector2 input, Vector3 worldMoveDirection, bool sprint, bool hasBall, bool burstSprint = false)
     {
         ApplyMovement(
             CharacterMovementUtility.ClampInput(input),
             CharacterMovementUtility.ClampPlanar(worldMoveDirection),
             sprint,
-            hasBall);
+            hasBall,
+            burstSprint);
     }
 
-    private void ApplyMovement(Vector2 input, Vector3 direction, bool sprint, bool hasBall)
+    private void ApplyMovement(Vector2 input, Vector3 direction, bool sprint, bool hasBall, bool burstSprint = false)
     {
         rawMoveInput = input;
         sprintRequested = sprint;
+        burstSprintRequested = burstSprint;
         this.hasBall = hasBall;
         moveDirection = state != null && state.IsStunned ? Vector3.zero : direction;
         RefreshMovementProfile();
@@ -141,33 +146,46 @@ public class CharacterLocomotion : MonoBehaviour
         dodgeUntil = -999f;
         sprintRequested = false;
         IsSprinting = false;
+        burstSprintRequested = false;
+        IsBurstSprinting = false;
         motor.CancelDash();
         RefreshMovementProfile();
     }
 
     private void Update()
     {
-        bool wasSprinting = IsSprinting;
+        bool wasSprinting = IsSprinting || IsBurstSprinting;
         RefreshMovementProfile();
 
-        if (IsSprinting)
+        if (IsBurstSprinting)
         {
-            SpendStamina(Config.SprintDrainPerSecond * Time.deltaTime);
+            SpendStamina(ResolveSprintStaminaDrain(Config.SprintDrainPerSecond, burstSprint: true) * Time.deltaTime);
+        }
+        else if (IsSprinting)
+        {
+            SpendStamina(ResolveSprintStaminaDrain(Config.SprintDrainPerSecond, burstSprint: false) * Time.deltaTime);
         }
         else if (Time.time - lastStaminaSpendTime >= Config.StaminaRegenDelay)
         {
             stamina = Mathf.Min(Config.MaxStamina, stamina + Config.StaminaRegenPerSecond * Time.deltaTime);
         }
 
-        if (wasSprinting != IsSprinting)
+        if (wasSprinting != (IsSprinting || IsBurstSprinting))
             motor.SetMovement(moveDirection, activeMovementProfile);
     }
 
     private void RefreshMovementProfile()
     {
-        bool canStartSprint = stamina > (IsSprinting ? 0f : Config.MinStaminaToSprint);
+        bool canStartSprint = stamina > ((IsSprinting || IsBurstSprinting) ? 0f : Config.MinStaminaToSprint);
         IsSprinting = sprintRequested && HasMoveInput && !hasBall && !IsDodging && state != null && !state.IsStunned && canStartSprint;
-        activeMovementProfile = Config.ResolveProfile(IsSprinting, hasBall);
+        IsBurstSprinting = burstSprintRequested && HasMoveInput && !IsDodging && state != null && !state.IsStunned && canStartSprint;
+        activeMovementProfile = Config.ResolveProfile(IsSprinting, hasBall, IsBurstSprinting);
+    }
+
+    public static float ResolveSprintStaminaDrain(float baseDrainPerSecond, bool burstSprint)
+    {
+        float multiplier = burstSprint ? 1.8f : 1f;
+        return Mathf.Max(0f, baseDrainPerSecond) * multiplier * 0.5f;
     }
 
     private void SpendStamina(float amount)

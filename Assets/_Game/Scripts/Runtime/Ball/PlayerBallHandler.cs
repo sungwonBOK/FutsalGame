@@ -142,10 +142,10 @@ public class PlayerBallHandler : MonoBehaviour
             interaction.CancelCharge();
     }
 
-    public void SetSprintDribbleInput(bool held, Vector3 actionDirection)
+    public void SetSprintDribbleInput(bool held, Vector3 actionDirection, bool burstSprint = false)
     {
         if (interaction != null)
-            interaction.SetSprintInput(held, actionDirection);
+            interaction.SetSprintInput(held, actionDirection, burstSprint);
     }
 
     public void Pass(Vector3 actionDirection)

@@ -13,6 +13,7 @@ public sealed class BallInteractionController
     private readonly BallConfig config;
 
     private bool sprintHeld;
+    private bool burstSprint;
     private Vector3 sprintActionDirection = Vector3.forward;
     private float sprintTouchStartedAt = -1f;
 
@@ -35,13 +36,17 @@ public sealed class BallInteractionController
         return Mathf.Clamp01((now - chargeStartedAt) / Mathf.Max(0.0001f, config.Shot.maxChargeTime));
     }
 
-    public void SetSprintInput(bool held, Vector3 actionDirection)
+    public void SetSprintInput(bool held, Vector3 actionDirection, bool burstSprint = false)
     {
         sprintHeld = held;
+        this.burstSprint = burstSprint;
         sprintActionDirection = actionDirection;
 
         if (!sprintHeld)
+        {
             sprintTouchStartedAt = -1f;
+            this.burstSprint = false;
+        }
     }
 
     public bool TryTick(float now, bool canInteract, Vector3 fallbackForward, out Vector3 sprintTouchImpulse)
@@ -76,7 +81,11 @@ public sealed class BallInteractionController
             return false;
 
         sprintTouchStartedAt = -1f;
-        sprintTouchImpulse = CaptureDirection(sprintActionDirection, fallbackForward) * config.Dribble.sprintTouchForce;
+        float sprintTouchForce = config.Dribble.sprintTouchForce * config.PossessionSprintTouchMultiplier;
+        if (burstSprint)
+            sprintTouchForce *= config.BurstSprintTouchMultiplier;
+
+        sprintTouchImpulse = CaptureDirection(sprintActionDirection, fallbackForward) * sprintTouchForce;
         return possession.Release(now, sprintTouchImpulse);
     }
 
@@ -133,6 +142,7 @@ public sealed class BallInteractionController
     public void CancelAll()
     {
         sprintHeld = false;
+        burstSprint = false;
         sprintTouchStartedAt = -1f;
         activeChargeAction = BallChargeAction.None;
     }

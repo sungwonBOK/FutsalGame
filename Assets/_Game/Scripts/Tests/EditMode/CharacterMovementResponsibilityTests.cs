@@ -5,6 +5,13 @@ using UnityEngine;
 public class CharacterMovementResponsibilityTests
 {
     [Test]
+    public void ResolveSprintStaminaDrain_HalvesNormalAndBurstRates()
+    {
+        Assert.That(CharacterLocomotion.ResolveSprintStaminaDrain(26f, burstSprint: false), Is.EqualTo(13f));
+        Assert.That(CharacterLocomotion.ResolveSprintStaminaDrain(26f, burstSprint: true), Is.EqualTo(23.4f));
+    }
+
+    [Test]
     public void MovementConfig_SelectsPossessionProfileBeforeSprint()
     {
         CharacterMovementConfig config = ScriptableObject.CreateInstance<CharacterMovementConfig>();
@@ -74,6 +81,25 @@ public class CharacterMovementResponsibilityTests
         finally
         {
             Object.DestroyImmediate(player);
+        }
+    }
+
+    [Test]
+    public void MovementConfig_BurstSprintUsesTheRequestedSpeedForEveryPossessionState()
+    {
+        CharacterMovementConfig config = ScriptableObject.CreateInstance<CharacterMovementConfig>();
+
+        try
+        {
+            CharacterMovementProfile noBallBurst = config.ResolveProfile(sprint: true, hasBall: false, burstSprint: true);
+            CharacterMovementProfile possessionBurst = config.ResolveProfile(sprint: false, hasBall: true, burstSprint: true);
+
+            Assert.That(noBallBurst.speed, Is.EqualTo(config.BurstSprintSpeed));
+            Assert.That(possessionBurst.speed, Is.EqualTo(config.BurstSprintSpeed));
+        }
+        finally
+        {
+            Object.DestroyImmediate(config);
         }
     }
 
