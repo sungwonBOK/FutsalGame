@@ -44,7 +44,7 @@ public class BallInteractionControllerTests
     }
 
     [Test]
-    public void SprintTouch_ReleasesAfterConfiguredIntervalWithPossessionMultiplier()
+    public void SprintTouch_ReleasesAfterConfiguredIntervalWithHalvedPossessionForce()
     {
         Assert.That(possession.AcquireInitial(true), Is.True);
         interaction.SetSprintInput(true, Vector3.forward);
@@ -55,12 +55,12 @@ public class BallInteractionControllerTests
 
         Vector3 impulse;
         Assert.That(interaction.TryTick(10.5f, true, Vector3.forward, out impulse), Is.True);
-        Assert.That(impulse, Is.EqualTo(Vector3.forward * config.Dribble.sprintTouchForce * 2f));
+        Assert.That(impulse, Is.EqualTo(Vector3.forward * 3.5f));
         Assert.That(ball.CurrentOwner, Is.Null);
     }
 
     [Test]
-    public void BurstSprintTouch_AppliesTheAdditionalOnePointFourMultiplier()
+    public void BurstSprintTouch_ReleasesWithHalvedForceAndOnePointFourMultiplier()
     {
         Assert.That(possession.AcquireInitial(true), Is.True);
         interaction.SetSprintInput(true, Vector3.forward, burstSprint: true);
@@ -70,7 +70,7 @@ public class BallInteractionControllerTests
 
         Vector3 impulse;
         Assert.That(interaction.TryTick(10.5f, true, Vector3.forward, out impulse), Is.True);
-        Assert.That(impulse, Is.EqualTo(Vector3.forward * config.Dribble.sprintTouchForce * 2.8f));
+        Assert.That(impulse, Is.EqualTo(Vector3.forward * 4.9f));
     }
 
     [Test]

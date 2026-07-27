@@ -47,7 +47,7 @@ public class BallConfig : ScriptableObject
             this.detachImpulse = detachImpulse;
             this.sprintTouchInterval = sprintTouchInterval;
             this.sprintTouchForce = sprintTouchForce;
-            possessionSprintTouchMultiplier = 2f;
+            possessionSprintTouchMultiplier = 1f;
             burstSprintTouchMultiplier = 1.4f;
         }
     }
@@ -128,6 +128,6 @@ public class BallConfig : ScriptableObject
     public float ShotMomentumInherit => Shot.momentumInherit > 0f ? Shot.momentumInherit : 0.5f;
     public float FirstTouchWindow => Shot.firstTouchWindow > 0f ? Shot.firstTouchWindow : 0.35f;
     public float FirstTouchBonus => Shot.firstTouchBonus > 1f ? Shot.firstTouchBonus : 1.3f;
-    public float PossessionSprintTouchMultiplier => Dribble.possessionSprintTouchMultiplier > 0f ? Dribble.possessionSprintTouchMultiplier : 2f;
+    public float PossessionSprintTouchMultiplier => Dribble.possessionSprintTouchMultiplier > 0f ? Dribble.possessionSprintTouchMultiplier : 1f;
     public float BurstSprintTouchMultiplier => Dribble.burstSprintTouchMultiplier > 0f ? Dribble.burstSprintTouchMultiplier : 1.4f;
 }
