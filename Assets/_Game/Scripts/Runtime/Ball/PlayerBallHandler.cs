@@ -44,6 +44,13 @@ public class PlayerBallHandler : MonoBehaviour
     /// <summary>내가 조종하지만 서버는 아닌 경우 — 의도를 서버로 보내야 한다.</summary>
     private bool ForwardsToServer => IsNetworked && netAgent.IsOwner && !netAgent.IsServer;
 
+    /// <summary>
+    /// 연출을 이 자리에서 바로 재생할지.
+    /// 서버가 남의 선수 요청을 대신 실행하는 중이라면 여기서 재생하지 않고 브로드캐스트에 맡긴다
+    /// (그래야 호스트 화면에서 두 번 나오지 않는다).
+    /// </summary>
+    private bool PlaysPresentationLocally => !IsNetworked || netAgent.IsOwner;
+
     public bool HasBall => possession != null && possession.HasBall;
     public bool IsWithinAcquireRange => possession != null && possession.IsWithinAcquireRange;
     public bool IsCharging => interaction != null && interaction.IsCharging;
@@ -120,6 +127,11 @@ public class PlayerBallHandler : MonoBehaviour
     {
         if (ForwardsToServer)
         {
+            if (!HasBall)
+                return;
+
+            // 슛 모션은 서버 응답을 기다리지 않고 바로 보여준다.
+            PlayShotPresentationLocal(CaptureShotDirection(actionDirection, transform.forward));
             netAgent.RequestBallActionRpc(BallActionKind.Shoot, actionDirection);
             return;
         }
@@ -159,6 +171,9 @@ public class PlayerBallHandler : MonoBehaviour
     {
         if (ForwardsToServer)
         {
+            if (HasBall && action == BallChargeAction.Shot)
+                PlayShotPresentationLocal(CaptureShotDirection(releaseDirection, transform.forward));
+
             netAgent.RequestBallActionRpc(ToChargeReleaseKind(action), releaseDirection);
             interaction?.CancelCharge(); // 로컬 게이지도 같이 내린다
             return;
@@ -360,13 +375,12 @@ public class PlayerBallHandler : MonoBehaviour
     /// </summary>
     private void PlayShotPresentation(Vector3 direction)
     {
+        // 쏜 본인은 이미 재생했으므로, 서버는 나머지에게만 알린다.
         if (IsNetworked && netAgent.IsServer)
-        {
-            netAgent.BroadcastShotPresentation(direction); // 호스트 자신도 포함해 재생된다
-            return;
-        }
+            netAgent.BroadcastShotPresentation(direction);
 
-        PlayShotPresentationLocal(direction);
+        if (PlaysPresentationLocally)
+            PlayShotPresentationLocal(direction);
     }
 
     /// <summary>이 클라이언트에서만 슛 연출을 재생한다(연출 복제의 도착 지점).</summary>

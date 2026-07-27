@@ -13,6 +13,13 @@ using UnityEngine;
 /// 팀/AI 여부는 서버가 스폰 직후 NetworkVariable에 써서 모든 클라로 복제한다.
 /// 클라는 값이 도착하는 시점이 한 틱 늦을 수 있으므로 OnValueChanged로도 다시 반영한다.
 /// </summary>
+/// <summary>클라이언트가 서버에 요청하는 전투 동작의 종류.</summary>
+public enum CombatActionKind : byte
+{
+    Punch,
+    SlideTackle,
+}
+
 /// <summary>클라이언트가 서버에 요청하는 공 동작의 종류.</summary>
 public enum BallActionKind : byte
 {
@@ -47,7 +54,12 @@ public class NetworkPlayerAgent : NetworkBehaviour
     private SimpleAIController aiController;
     private CharacterMotor motor;
     private PlayerBallHandler ballHandler;
+    private CombatController combat;
+    private CharacterState characterState;
     private MaterialPropertyBlock propertyBlock;
+
+    /// <summary>기절 여부는 서버가 정해 모두에게 복제한다.</summary>
+    private readonly NetworkVariable<bool> stunned = new NetworkVariable<bool>(false);
 
     /// <summary>이 선수의 팀 (0 = Blue, 1 = Red).</summary>
     public byte Team => team.Value;
@@ -64,6 +76,8 @@ public class NetworkPlayerAgent : NetworkBehaviour
         aiController = GetComponent<SimpleAIController>();
         motor = GetComponent<CharacterMotor>();
         ballHandler = GetComponent<PlayerBallHandler>();
+        combat = GetComponent<CombatController>();
+        characterState = GetComponent<CharacterState>();
 
         // 정체가 정해지기 전에 잘못 움직이지 않도록 둘 다 꺼두고 시작한다.
         if (playerInput != null) playerInput.enabled = false;
@@ -87,15 +101,34 @@ public class NetworkPlayerAgent : NetworkBehaviour
 
         team.OnValueChanged += HandleTeamChanged;
         controlledByAI.OnValueChanged += HandleControlModeChanged;
+        stunned.OnValueChanged += HandleStunChanged;
 
         ApplyIdentity();
         RegisterWithMatch();
+    }
+
+    private void Update()
+    {
+        // 서버가 기절 상태 변화를 감지해 복제한다(피격뿐 아니라 시간이 지나 풀리는 것도 포함).
+        if (!IsSpawned || !IsServer || characterState == null)
+            return;
+
+        if (stunned.Value != characterState.IsStunned)
+            stunned.Value = characterState.IsStunned;
+    }
+
+    private void HandleStunChanged(bool previous, bool current)
+    {
+        if (IsServer || characterState == null) return; // 서버는 이미 실제 상태를 갖고 있다
+
+        characterState.MirrorStun(current);
     }
 
     public override void OnNetworkDespawn()
     {
         team.OnValueChanged -= HandleTeamChanged;
         controlledByAI.OnValueChanged -= HandleControlModeChanged;
+        stunned.OnValueChanged -= HandleStunChanged;
 
         if (GameManager.Instance != null)
             GameManager.Instance.UnregisterCharacter(transform);
@@ -202,7 +235,7 @@ public class NetworkPlayerAgent : NetworkBehaviour
             ballHandler.ExecuteRequestedAction(kind, direction);
     }
 
-    /// <summary>서버가 슛 연출을 모든 클라이언트에서 재생시킨다.</summary>
+    /// <summary>슛한 본인 말고 나머지에게 슛 연출을 재생시킨다(본인은 이미 재생했다).</summary>
     public void BroadcastShotPresentation(Vector3 direction)
     {
         if (!IsServer || !IsSpawned) return;
@@ -210,11 +243,92 @@ public class NetworkPlayerAgent : NetworkBehaviour
         ShotPresentationRpc(direction);
     }
 
-    [Rpc(SendTo.Everyone)]
+    [Rpc(SendTo.NotOwner)]
     private void ShotPresentationRpc(Vector3 direction)
     {
         if (ballHandler != null)
             ballHandler.PlayShotPresentationLocal(direction);
+    }
+
+    // ---------------- 전투 요청/결과 ----------------
+
+    /// <summary>내가 조종하는 선수의 전투 동작을 서버에 요청한다. 맞았는지는 서버가 판정한다.</summary>
+    [Rpc(SendTo.Server)]
+    public void RequestCombatActionRpc(CombatActionKind kind, Vector3 direction)
+    {
+        if (combat == null) return;
+
+        if (kind == CombatActionKind.Punch)
+            combat.Punch(direction);
+        else
+            combat.SlideTackle(direction);
+    }
+
+    /// <summary>동작을 시작한 본인 말고 나머지에게 모션을 보여준다(본인은 이미 재생했다).</summary>
+    public void BroadcastCombatAnimation(CombatActionKind kind)
+    {
+        if (!IsServer || !IsSpawned) return;
+
+        CombatAnimationRpc(kind);
+    }
+
+    [Rpc(SendTo.NotOwner)]
+    private void CombatAnimationRpc(CombatActionKind kind)
+    {
+        if (combat != null)
+            combat.PlayActionPresentationLocal(kind);
+    }
+
+    /// <summary>서버가 피격 연출을 모든 클라이언트에서 재생시킨다.</summary>
+    public void BroadcastHitPresentation(Vector3 hitPosition, Vector3 hitDirection, ulong victimObjectId)
+    {
+        if (!IsServer || !IsSpawned) return;
+
+        HitPresentationRpc(hitPosition, hitDirection, victimObjectId);
+    }
+
+    [Rpc(SendTo.Everyone)]
+    private void HitPresentationRpc(Vector3 hitPosition, Vector3 hitDirection, ulong victimObjectId)
+    {
+        if (combat == null) return;
+
+        // 내가 때렸거나 내가 맞았을 때만 화면을 흔든다.
+        bool involvesLocalPlayer = IsOwner || IsLocallyOwned(victimObjectId);
+        combat.PlayHitPresentationLocal(hitPosition, hitDirection, involvesLocalPlayer);
+    }
+
+    private static bool IsLocallyOwned(ulong objectId)
+    {
+        if (objectId == 0 || NetworkManager.Singleton == null)
+            return false;
+
+        return NetworkManager.Singleton.SpawnManager.SpawnedObjects
+                   .TryGetValue(objectId, out NetworkObject netObject)
+               && netObject != null
+               && netObject.IsOwner;
+    }
+
+    /// <summary>서버가 판정한 넉백을, 이동 권한을 가진 소유자에게 적용시킨다.</summary>
+    public void ServerApplyKnockback(Vector3 impulse)
+    {
+        if (!IsServer || !IsSpawned) return;
+
+        KnockbackRpc(impulse);
+    }
+
+    [Rpc(SendTo.Owner)]
+    private void KnockbackRpc(Vector3 impulse)
+    {
+        if (characterState != null)
+            characterState.ApplyKnockbackImpulse(impulse);
+    }
+
+    /// <summary>회피 무적을 서버에도 알린다. 서버가 모르면 무적이 판정에서 무시된다.</summary>
+    [Rpc(SendTo.Server)]
+    public void ReportInvulnerabilityRpc(float duration)
+    {
+        if (characterState != null)
+            characterState.ApplyInvulnerability(duration);
     }
 
     // ---------------- 리셋(순간이동) ----------------
