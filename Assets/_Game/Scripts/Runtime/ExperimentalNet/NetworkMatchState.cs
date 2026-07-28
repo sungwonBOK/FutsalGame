@@ -33,9 +33,11 @@ public class NetworkMatchState : NetworkBehaviour
         Instance = this;
     }
 
-    private void OnDestroy()
+    // NetworkBehaviour의 OnDestroy는 내부 정리를 하므로 반드시 이어서 호출해야 한다.
+    public override void OnDestroy()
     {
         if (Instance == this) Instance = null;
+        base.OnDestroy();
     }
 
     private void Update()
