@@ -128,16 +128,57 @@ public class MatchSpawner : MonoBehaviour
     }
 
     /// <summary>
-    /// 씬에 고정 배치된 오프라인 캐릭터를 끈다. 스폰된 선수와 섞이지 않게 하려는 것이므로
+    /// 씬에 고정 배치된 오프라인 캐릭터를 경기에서 빼낸다. 스폰된 선수와 섞이지 않게 하려는 것이므로
     /// 서버뿐 아니라 모든 클라이언트에서 호출해야 한다.
     /// </summary>
     public void PrepareForNetworkMatch()
     {
         if (offlineOnlyObjects == null) return;
+
         foreach (GameObject target in offlineOnlyObjects)
         {
-            if (target != null && target.activeSelf)
-                target.SetActive(false);
+            if (target != null)
+                RetireOfflineCharacter(target);
         }
+    }
+
+    /// <summary>
+    /// 캐릭터로서의 기능과 표시만 끄고 오브젝트 자체는 살려둔다.
+    ///
+    /// GameObject를 통째로 끄면 거기 함께 붙어 있는 씬 공용 컴포넌트(입력 리더 등)까지 같이 죽는다.
+    /// 그러면 스폰된 선수가 입력을 찾지 못해 아무 조작도 되지 않는다.
+    /// </summary>
+    private static void RetireOfflineCharacter(GameObject target)
+    {
+        if (GameManager.Instance != null)
+            GameManager.Instance.UnregisterCharacter(target.transform);
+
+        Disable(target.GetComponent<PlayerInput>());
+        Disable(target.GetComponent<SimpleAIController>());
+        Disable(target.GetComponent<CharacterMotor>());
+        Disable(target.GetComponent<CharacterLocomotion>());
+        Disable(target.GetComponent<CombatController>());
+        Disable(target.GetComponent<PlayerBallHandler>());
+        Disable(target.GetComponent<CharacterAnimator>());
+
+        foreach (Renderer renderer in target.GetComponentsInChildren<Renderer>(includeInactive: true))
+            renderer.enabled = false;
+        foreach (Collider collider in target.GetComponentsInChildren<Collider>(includeInactive: true))
+            collider.enabled = false;
+
+        // 남은 물리가 공을 밀지 않도록 완전히 멈춰 세운다.
+        Rigidbody body = target.GetComponent<Rigidbody>();
+        if (body != null)
+        {
+            body.linearVelocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+            body.isKinematic = true;
+        }
+    }
+
+    private static void Disable(Behaviour behaviour)
+    {
+        if (behaviour != null)
+            behaviour.enabled = false;
     }
 }
