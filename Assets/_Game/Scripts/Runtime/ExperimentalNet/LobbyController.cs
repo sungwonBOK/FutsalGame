@@ -334,12 +334,28 @@ public class LobbyController : NetworkBehaviour
     private void DrawConnectionDiagnostics()
     {
         GUILayout.Space(8);
-        GUIStyle small = new GUIStyle(GUI.skin.label) { fontSize = 12, wordWrap = true };
+        DrawConnectionReport();
 
+        GUIStyle small = new GUIStyle(GUI.skin.label) { fontSize = 12, wordWrap = true };
         GUILayout.Label("환경: " + RelayConnectionService.EnvironmentName, small);
 
         string playerId = RelayConnectionService.PlayerId;
         GUILayout.Label("플레이어 ID: " + (string.IsNullOrEmpty(playerId) ? "(로그인 전)" : playerId), small);
+    }
+
+    /// <summary>연결 도중 무슨 일이 있었는지(접속/끊김/사유)를 방을 만든 쪽과 들어간 쪽 모두에 보여준다.</summary>
+    private void DrawConnectionReport()
+    {
+        NetworkConnectionReporter reporter = NetworkConnectionReporter.Instance;
+        if (reporter == null || string.IsNullOrEmpty(reporter.LastMessage))
+            return;
+
+        GUIStyle style = new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true };
+        style.normal.textColor = reporter.LastMessageIsProblem
+            ? new Color(1f, 0.55f, 0.45f)
+            : new Color(0.6f, 0.95f, 0.6f);
+
+        GUILayout.Label(reporter.LastMessage, style);
     }
 
     // ---------------- Relay 접속 ----------------
@@ -350,6 +366,7 @@ public class LobbyController : NetworkBehaviour
         isConnecting = true;
         statusMessage = "방 만드는 중...";
         hostJoinCode = "";
+        NetworkConnectionReporter.Instance?.Clear(); // 이전 시도의 결과가 남아 헷갈리지 않게
 
         try
         {
@@ -388,14 +405,17 @@ public class LobbyController : NetworkBehaviour
 
         isConnecting = true;
         statusMessage = "접속 중...";
+        NetworkConnectionReporter.Instance?.Clear();
 
         try
         {
             await RelayConnectionService.JoinAllocationAsync(code);
-            if (!NetworkManager.Singleton.StartClient())
-                statusMessage = "접속에 실패했습니다.";
-            else
-                statusMessage = "호스트에 연결했습니다.";
+
+            // StartClient는 "시도를 시작했다"는 뜻일 뿐이다.
+            // 실제로 붙었는지/왜 끊겼는지는 NetworkConnectionReporter가 알려준다.
+            statusMessage = NetworkManager.Singleton.StartClient()
+                ? "코드는 확인됐습니다. 호스트에 연결하는 중..."
+                : "접속을 시작하지 못했습니다.";
         }
         catch (Exception e)
         {
@@ -438,6 +458,9 @@ public class LobbyController : NetworkBehaviour
         DrawTeamColumn(1, "RED");
         GUILayout.EndHorizontal();
         GUILayout.EndScrollView();
+
+        // 방에서도 접속/이탈 상황이 보여야 상대가 왜 안 들어오는지 알 수 있다.
+        DrawConnectionReport();
 
         GUILayout.Space(6);
         GUILayout.BeginHorizontal();

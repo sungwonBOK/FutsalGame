@@ -80,6 +80,21 @@ public static class NetworkMatchSetupTool
         AssignIfEmpty(spawnPointsSo.FindProperty("redGoal"), FindTransform("Goal_East"));
         spawnPointsSo.ApplyModifiedProperties();
 
+        // 접속 실패 원인을 화면에 설명해주는 컴포넌트. 로비와 같은 오브젝트에 둔다.
+        if (Object.FindAnyObjectByType<NetworkConnectionReporter>() == null)
+        {
+            LobbyController lobby = Object.FindAnyObjectByType<LobbyController>();
+            GameObject host = lobby != null
+                ? lobby.gameObject
+                : new GameObject("NetworkConnectionReporter");
+
+            if (lobby == null)
+                Undo.RegisterCreatedObjectUndo(host, "Create NetworkConnectionReporter");
+
+            Undo.AddComponent<NetworkConnectionReporter>(host);
+            EditorUtility.SetDirty(host);
+        }
+
         MatchSpawner spawner = Object.FindAnyObjectByType<MatchSpawner>();
         if (spawner == null)
         {
