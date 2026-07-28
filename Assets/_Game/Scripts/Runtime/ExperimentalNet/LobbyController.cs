@@ -77,6 +77,12 @@ public class LobbyController : NetworkBehaviour
         }
 
         matchStarted.OnValueChanged += HandleMatchStartedChanged;
+
+        // 경기가 이미 시작된 뒤에 들어온 사람은 값이 바뀌는 순간을 놓친다.
+        // 그대로 두면 그 사람 화면에만 오프라인 캐릭터가 남아 경기에 섞인다.
+        if (matchStarted.Value && !IsServer)
+            EnterStartedMatch();
+
         screen = Screen.Room;
     }
 
@@ -97,6 +103,11 @@ public class LobbyController : NetworkBehaviour
     {
         if (!current || IsServer) return; // 서버는 SvStartMatch에서 이미 처리했다
 
+        EnterStartedMatch();
+    }
+
+    private void EnterStartedMatch()
+    {
         if (MatchSpawner.Instance != null)
             MatchSpawner.Instance.PrepareForNetworkMatch();
     }

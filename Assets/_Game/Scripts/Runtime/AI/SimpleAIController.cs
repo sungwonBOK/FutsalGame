@@ -118,7 +118,9 @@ public class SimpleAIController : MonoBehaviour
         List<CombatController> others = new List<CombatController>(all.Length);
         foreach (CombatController candidate in all)
         {
-            if (candidate != combat)
+            // 경기에서 빠진 캐릭터(온라인 경기의 오프라인 배치분)는 오브젝트가 남아 있어도
+            // 컴포넌트가 꺼져 있다. 이런 상대를 쫓아다니지 않도록 걸러낸다.
+            if (candidate != combat && candidate.isActiveAndEnabled)
                 others.Add(candidate);
         }
 

@@ -206,6 +206,11 @@ public class NetworkPlayerAgent : NetworkBehaviour
                 Transform ball = BallController.ActiveBall != null ? BallController.ActiveBall.transform : null;
                 actionCamera.SetTargets(transform, GetComponent<Rigidbody>(), ball);
             }
+
+            // 시점 전환(레거시 카메라)도 같은 선수를 보게 맞춘다.
+            CameraViewSwitcher viewSwitcher = Camera.main.GetComponent<CameraViewSwitcher>();
+            if (viewSwitcher != null)
+                viewSwitcher.SetTarget(transform);
         }
 
         AbilityCooldownUI cooldownUI = FindAnyObjectByType<AbilityCooldownUI>();
