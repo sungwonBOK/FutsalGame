@@ -235,7 +235,10 @@ public class LobbyController : NetworkBehaviour
 
     private void DrawMainOrLan(NetworkManager nm)
     {
-        float w = 360, h = 300;
+        // 온라인 화면은 조인코드·상태·진단까지 들어가 메뉴 화면보다 훨씬 길다.
+        // 높이를 하나로 고정하면 아래쪽 버튼이 잘려 안 보인다.
+        float w = Mathf.Min(400f, UnityEngine.Screen.width - 40f);
+        float h = Mathf.Min(screen == Screen.Online ? 520f : 320f, UnityEngine.Screen.height - 40f);
         Rect area = new Rect((UnityEngine.Screen.width - w) / 2f, (UnityEngine.Screen.height - h) / 2f, w, h);
         GUILayout.BeginArea(area, GUI.skin.box);
 
@@ -322,7 +325,8 @@ public class LobbyController : NetworkBehaviour
 
         DrawConnectionDiagnostics();
 
-        GUILayout.Space(6);
+        // 위 내용이 길어져도 뒤로 버튼은 항상 아래에 남는다.
+        GUILayout.FlexibleSpace();
         if (!isConnecting && GUILayout.Button("← 뒤로"))
             screen = Screen.Main;
     }
@@ -431,7 +435,9 @@ public class LobbyController : NetworkBehaviour
 
     private void DrawRoom(NetworkManager nm)
     {
-        float w = 720, h = 460;
+        // 화면보다 커지지 않게 제한한다(작은 해상도에서 버튼이 화면 밖으로 나가는 것 방지).
+        float w = Mathf.Min(720f, UnityEngine.Screen.width - 40f);
+        float h = Mathf.Min(560f, UnityEngine.Screen.height - 40f);
         Rect area = new Rect((UnityEngine.Screen.width - w) / 2f, (UnityEngine.Screen.height - h) / 2f, w, h);
         GUILayout.BeginArea(area, GUI.skin.box);
 
@@ -451,7 +457,9 @@ public class LobbyController : NetworkBehaviour
         }
         GUILayout.Space(6);
 
-        scroll = GUILayout.BeginScrollView(scroll, GUILayout.Height(330));
+        // 높이를 고정하면 위아래에 줄이 하나만 늘어도 아래 버튼이 창 밖으로 밀려 사라진다.
+        // 남는 공간을 목록이 차지하게 해서 "게임 시작"과 "나가기"가 항상 보이도록 한다.
+        scroll = GUILayout.BeginScrollView(scroll, GUILayout.ExpandHeight(true));
         GUILayout.BeginHorizontal();
         DrawTeamColumn(0, "BLUE");
         GUILayout.Space(12);
