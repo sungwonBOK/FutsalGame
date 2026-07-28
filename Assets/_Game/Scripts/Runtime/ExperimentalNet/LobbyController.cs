@@ -150,12 +150,51 @@ public class LobbyController : NetworkBehaviour
         slots[index] = s;
     }
 
-    private void SvAssignFirstHuman(int index)
+    /// <summary>
+    /// 이 칸에 넣을 사람을 바꾼다. 누를 때마다 접속자들을 차례로 돌아가며 배치한다.
+    ///
+    /// 예전에는 "아직 배치 안 된 첫 사람"만 넣을 수 있어서, 누구를 어느 팀에 둘지 고를 수 없었고
+    /// 이미 배치된 사람을 다른 팀으로 옮기려면 먼저 그 칸을 비워야 했다.
+    /// </summary>
+    private void SvAssignNextHuman(int index)
     {
-        if (!IsServer) return;
-        ulong c = FirstUnassignedHuman();
-        if (c == ulong.MaxValue) return; // 배치 가능한 미배치 인원 없음
-        SvSet(index, Occupant.Human, c);
+        if (!IsServer || index < 0 || index >= slots.Count) return;
+
+        List<ulong> connected = SortedConnectedClients();
+        if (connected.Count == 0) return;
+
+        TeamSlot slot = slots[index];
+        int current = slot.type == Occupant.Human ? connected.IndexOf(slot.clientId) : -1;
+        ulong next = connected[(current + 1) % connected.Count];
+
+        // 한 사람이 두 자리를 차지하지 않도록 원래 있던 칸을 비운다.
+        VacateHuman(next);
+        SvSet(index, Occupant.Human, next);
+    }
+
+    /// <summary>접속자 목록을 항상 같은 순서로 돌기 위해 정렬해서 돌려준다.</summary>
+    private List<ulong> SortedConnectedClients()
+    {
+        List<ulong> ids = new List<ulong>();
+        foreach (ulong id in NetworkManager.ConnectedClientsIds)
+            ids.Add(id);
+
+        ids.Sort();
+        return ids;
+    }
+
+    private void VacateHuman(ulong clientId)
+    {
+        for (int i = 0; i < slots.Count; i++)
+        {
+            TeamSlot s = slots[i];
+            if (s.type == Occupant.Human && s.clientId == clientId)
+            {
+                s.type = Occupant.Empty;
+                s.clientId = 0;
+                slots[i] = s;
+            }
+        }
     }
 
     private void SvStartMatch()
@@ -187,19 +226,6 @@ public class LobbyController : NetworkBehaviour
         int n = 0;
         for (int i = 0; i < slots.Count; i++) if (slots[i].team == team) n++;
         return n;
-    }
-
-    /// <summary>어느 Human 슬롯에도 배치되지 않은 접속 클라 중 첫 번째. 없으면 ulong.MaxValue.</summary>
-    private ulong FirstUnassignedHuman()
-    {
-        foreach (ulong id in NetworkManager.ConnectedClientsIds)
-        {
-            bool placed = false;
-            for (int i = 0; i < slots.Count; i++)
-                if (slots[i].type == Occupant.Human && slots[i].clientId == id) { placed = true; break; }
-            if (!placed) return id;
-        }
-        return ulong.MaxValue;
     }
 
     private int UnassignedHumanCount()
@@ -516,7 +542,8 @@ public class LobbyController : NetworkBehaviour
             {
                 if (GUILayout.Button("빈칸", GUILayout.Width(44))) SvSet(i, Occupant.Empty, 0);
                 if (GUILayout.Button("AI", GUILayout.Width(36))) SvSet(i, Occupant.AI, 0);
-                if (GUILayout.Button("사람", GUILayout.Width(46))) SvAssignFirstHuman(i);
+                // 누를 때마다 다음 접속자로 바뀐다(같은 팀에 여러 명도 이렇게 배치한다).
+                if (GUILayout.Button("사람▶", GUILayout.Width(58))) SvAssignNextHuman(i);
                 if (GUILayout.Button("✕", GUILayout.Width(28))) SvRemoveSlot(i);
             }
             GUILayout.EndHorizontal();
