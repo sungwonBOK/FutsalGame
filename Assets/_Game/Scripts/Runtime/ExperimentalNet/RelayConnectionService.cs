@@ -5,6 +5,7 @@ using Unity.Netcode.Transports.UTP;
 using Unity.Networking.Transport.Relay;
 using Unity.Services.Authentication;
 using Unity.Services.Core;
+using Unity.Services.Core.Environments;
 using Unity.Services.Relay;
 using Unity.Services.Relay.Models;
 using UnityEngine;
@@ -24,6 +25,19 @@ public static class RelayConnectionService
     /// <summary>DTLS(암호화 UDP). Relay 기본 권장 연결 방식.</summary>
     public const string ConnectionTypeDtls = "dtls";
 
+    /// <summary>
+    /// 사용할 UGS 환경 이름.
+    ///
+    /// 조인코드는 환경별로 따로 관리되기 때문에, 호스트와 참가자가 서로 다른 환경을 쓰면
+    /// 같은 프로젝트인데도 "join code not found"가 난다.
+    /// 각자 에디터 설정에 맡기지 않고 여기서 고정해 그런 어긋남을 막는다.
+    /// </summary>
+    public const string EnvironmentName = "production";
+
+    /// <summary>로그인된 플레이어 ID. 확인용으로 화면에 보여준다.</summary>
+    public static string PlayerId =>
+        IsReady ? AuthenticationService.Instance.PlayerId : "";
+
     /// <summary>서비스 초기화 + 익명 로그인이 끝났는지.</summary>
     public static bool IsReady =>
         UnityServices.State == ServicesInitializationState.Initialized &&
@@ -34,10 +48,27 @@ public static class RelayConnectionService
     public static async Task InitializeAsync()
     {
         if (UnityServices.State == ServicesInitializationState.Uninitialized)
-            await UnityServices.InitializeAsync();
+        {
+            InitializationOptions options = new InitializationOptions().SetEnvironmentName(EnvironmentName);
+            await UnityServices.InitializeAsync(options);
+        }
 
         if (!AuthenticationService.Instance.IsSignedIn)
             await AuthenticationService.Instance.SignInAnonymouslyAsync();
+    }
+
+    /// <summary>
+    /// 실패 원인을 화면에 그대로 보여주기 위해 사람이 읽을 수 있는 형태로 만든다.
+    /// Relay 오류는 Reason에 실제 원인(코드 없음/권한 등)이 들어 있어 같이 붙인다.
+    /// </summary>
+    public static string DescribeError(System.Exception error)
+    {
+        if (error == null) return "";
+
+        if (error is RelayServiceException relayError)
+            return $"{relayError.Reason}: {relayError.Message}";
+
+        return $"{error.GetType().Name}: {error.Message}";
     }
 
     /// <summary>

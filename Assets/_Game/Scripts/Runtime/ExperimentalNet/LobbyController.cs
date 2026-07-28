@@ -220,6 +220,11 @@ public class LobbyController : NetworkBehaviour
         if (!nm.IsListening)
         {
             if (screen == Screen.Room) screen = Screen.Main; // 연결 끊기면 메뉴로
+
+            // 방이 닫히면 그 조인코드는 더 이상 쓸 수 없다. 새로 만들 수 있게 비운다.
+            if (!isConnecting && !string.IsNullOrEmpty(hostJoinCode))
+                hostJoinCode = "";
+
             DrawMainOrLan(nm);
             return;
         }
@@ -285,10 +290,15 @@ public class LobbyController : NetworkBehaviour
     /// <summary>Relay 조인코드로 방을 만들거나 참가하는 화면.</summary>
     private void DrawOnlineScreen()
     {
-        GUI.enabled = !isConnecting;
+        // 이미 방을 만든 뒤 다시 누르면 새 코드가 발급되면서 먼저 알려준 코드가 죽는다.
+        bool alreadyHosting = !string.IsNullOrEmpty(hostJoinCode);
 
-        if (GUILayout.Button("방 만들기 (조인코드 발급)", GUILayout.Height(44)))
+        GUI.enabled = !isConnecting && !alreadyHosting;
+
+        if (GUILayout.Button(alreadyHosting ? "방 생성됨" : "방 만들기 (조인코드 발급)", GUILayout.Height(44)))
             _ = HostViaRelayAsync();
+
+        GUI.enabled = !isConnecting;
 
         GUILayout.Space(12);
         GUILayout.Label("친구에게 받은 조인코드:");
@@ -310,9 +320,26 @@ public class LobbyController : NetworkBehaviour
         if (!string.IsNullOrEmpty(statusMessage))
             GUILayout.Label(statusMessage);
 
+        DrawConnectionDiagnostics();
+
         GUILayout.Space(6);
         if (!isConnecting && GUILayout.Button("← 뒤로"))
             screen = Screen.Main;
+    }
+
+    /// <summary>
+    /// 접속이 안 될 때 양쪽 화면만 비교하면 원인이 드러나도록 진단 정보를 보여준다.
+    /// 환경이 다르면 같은 프로젝트라도 조인코드를 찾지 못한다.
+    /// </summary>
+    private void DrawConnectionDiagnostics()
+    {
+        GUILayout.Space(8);
+        GUIStyle small = new GUIStyle(GUI.skin.label) { fontSize = 12, wordWrap = true };
+
+        GUILayout.Label("환경: " + RelayConnectionService.EnvironmentName, small);
+
+        string playerId = RelayConnectionService.PlayerId;
+        GUILayout.Label("플레이어 ID: " + (string.IsNullOrEmpty(playerId) ? "(로그인 전)" : playerId), small);
     }
 
     // ---------------- Relay 접속 ----------------
@@ -339,7 +366,7 @@ public class LobbyController : NetworkBehaviour
         }
         catch (Exception e)
         {
-            statusMessage = "방 만들기 실패: " + e.Message;
+            statusMessage = "방 만들기 실패 — " + RelayConnectionService.DescribeError(e);
             Debug.LogException(e, this);
         }
         finally
@@ -372,7 +399,8 @@ public class LobbyController : NetworkBehaviour
         }
         catch (Exception e)
         {
-            statusMessage = "접속 실패: " + e.Message;
+            // 원인(코드 없음/권한/환경 등)이 그대로 보여야 다음 시도에서 헤매지 않는다.
+            statusMessage = "접속 실패 — " + RelayConnectionService.DescribeError(e);
             Debug.LogException(e, this);
         }
         finally
