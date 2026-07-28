@@ -7,6 +7,7 @@ public class CharacterMovementConfig : ScriptableObject
     [SerializeField] private CharacterMovementProfile normal = new CharacterMovementProfile(6f, 45f, 60f, 720f);
     [SerializeField] private CharacterMovementProfile sprint = new CharacterMovementProfile(9f, 60f, 75f, 900f);
     [SerializeField] private CharacterMovementProfile possession = new CharacterMovementProfile(4.8f, 32f, 48f, 540f);
+    [SerializeField, Min(0f)] private float burstSprintSpeed = 12f;
 
     [Header("Stamina")]
     [SerializeField, Min(0f)] private float maxStamina = 100f;
@@ -25,6 +26,7 @@ public class CharacterMovementConfig : ScriptableObject
     public CharacterMovementProfile Normal => CharacterMovementUtility.SanitizeProfile(normal, 6f, 720f);
     public CharacterMovementProfile Sprint => CharacterMovementUtility.SanitizeProfile(sprint, Normal.speed, Normal.rotationSpeed);
     public CharacterMovementProfile Possession => CharacterMovementUtility.SanitizeProfile(possession, Normal.speed, Normal.rotationSpeed);
+    public float BurstSprintSpeed => burstSprintSpeed > 0f ? burstSprintSpeed : 12f;
     // Existing movement assets predate the mobility fields. Keep those assets playable
     // until an editor-side asset migration persists the inspector values.
     public float MaxStamina => maxStamina > 0f ? maxStamina : 100f;
@@ -38,10 +40,11 @@ public class CharacterMovementConfig : ScriptableObject
     public float DodgeCooldown => dodgeCooldown > 0f ? dodgeCooldown : 0.9f;
     public float DodgeInvulnerability => dodgeInvulnerability > 0f ? dodgeInvulnerability : 0.28f;
 
-    public CharacterMovementProfile ResolveProfile(bool sprint, bool hasBall)
+    public CharacterMovementProfile ResolveProfile(bool sprint, bool hasBall, bool burstSprint = false)
     {
-        if (hasBall)
-            return Possession;
-        return sprint ? Sprint : Normal;
+        CharacterMovementProfile profile = hasBall ? Possession : sprint ? Sprint : Normal;
+        if (burstSprint)
+            profile.speed = BurstSprintSpeed;
+        return profile;
     }
 }

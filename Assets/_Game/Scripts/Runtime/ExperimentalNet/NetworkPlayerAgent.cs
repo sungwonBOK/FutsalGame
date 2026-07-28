@@ -18,6 +18,7 @@ public enum CombatActionKind : byte
 {
     Punch,
     SlideTackle,
+    CrossPunch,
 }
 
 /// <summary>클라이언트가 서버에 요청하는 공 동작의 종류.</summary>
@@ -31,6 +32,7 @@ public enum BallActionKind : byte
     ReleaseChargePass,
     CancelCharge,
     SprintDribbleOn,
+    SprintDribbleBurstOn,
     SprintDribbleOff,
 }
 
@@ -258,10 +260,12 @@ public class NetworkPlayerAgent : NetworkBehaviour
     {
         if (combat == null) return;
 
-        if (kind == CombatActionKind.Punch)
-            combat.Punch(direction);
-        else
-            combat.SlideTackle(direction);
+        switch (kind)
+        {
+            case CombatActionKind.Punch: combat.Punch(direction); break;
+            case CombatActionKind.CrossPunch: combat.CrossPunch(direction); break;
+            default: combat.SlideTackle(direction); break;
+        }
     }
 
     /// <summary>동작을 시작한 본인 말고 나머지에게 모션을 보여준다(본인은 이미 재생했다).</summary>

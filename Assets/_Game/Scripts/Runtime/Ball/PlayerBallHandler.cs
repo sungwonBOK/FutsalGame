@@ -36,7 +36,9 @@ public class PlayerBallHandler : MonoBehaviour
     private BallConfig runtimeConfig;
     private NetworkPlayerAgent netAgent;
     private bool lastSentSprintHeld;   // 클라: 마지막으로 서버에 보낸 스프린트 상태
+    private bool lastSentBurstSprint;
     private bool serverSprintHeld;     // 서버: 원격 선수가 스프린트를 누르고 있는지
+    private bool serverBurstSprint;
 
     /// <summary>온라인 경기로 스폰된 선수인지. 오프라인 씬 캐릭터는 false.</summary>
     private bool IsNetworked => netAgent != null && netAgent.IsSpawned;
@@ -199,20 +201,19 @@ public class PlayerBallHandler : MonoBehaviour
             interaction.CancelCharge();
     }
 
-    public void SetSprintDribbleInput(bool held, Vector3 actionDirection)
+    public void SetSprintDribbleInput(bool held, Vector3 actionDirection, bool burstSprint = false)
     {
-        // 매 프레임 방향까지 보내면 낭비라, 눌림 상태가 바뀔 때만 알린다.
+        // 매 프레임 방향까지 보내면 낭비라, 눌림/폭발 상태가 바뀔 때만 알린다.
         // 서버는 복제된 캐릭터 방향을 대신 쓴다.
-        if (ForwardsToServer && held != lastSentSprintHeld)
+        if (ForwardsToServer && (held != lastSentSprintHeld || burstSprint != lastSentBurstSprint))
         {
             lastSentSprintHeld = held;
-            netAgent.RequestBallActionRpc(
-                held ? BallActionKind.SprintDribbleOn : BallActionKind.SprintDribbleOff,
-                actionDirection);
+            lastSentBurstSprint = burstSprint;
+            netAgent.RequestBallActionRpc(ResolveSprintKind(held, burstSprint), actionDirection);
         }
 
         if (interaction != null)
-            interaction.SetSprintInput(held, actionDirection);
+            interaction.SetSprintInput(held, actionDirection, burstSprint);
     }
 
     public void Pass(Vector3 actionDirection)
@@ -257,7 +258,13 @@ public class PlayerBallHandler : MonoBehaviour
         if (interaction == null) return;
         if (!IsNetworked || !netAgent.IsServer || netAgent.IsOwner) return;
 
-        interaction.SetSprintInput(serverSprintHeld, transform.forward);
+        interaction.SetSprintInput(serverSprintHeld, transform.forward, serverBurstSprint);
+    }
+
+    private static BallActionKind ResolveSprintKind(bool held, bool burstSprint)
+    {
+        if (!held) return BallActionKind.SprintDribbleOff;
+        return burstSprint ? BallActionKind.SprintDribbleBurstOn : BallActionKind.SprintDribbleOn;
     }
 
     private static BallActionKind ToChargeStartKind(BallChargeAction action) =>
@@ -281,8 +288,18 @@ public class PlayerBallHandler : MonoBehaviour
             case BallActionKind.ReleaseChargeShot: ReleaseCharge(BallChargeAction.Shot, direction); break;
             case BallActionKind.ReleaseChargePass: ReleaseCharge(BallChargeAction.Pass, direction); break;
             case BallActionKind.CancelCharge: CancelCharge(); break;
-            case BallActionKind.SprintDribbleOn: serverSprintHeld = true; SetSprintDribbleInput(true, direction); break;
-            case BallActionKind.SprintDribbleOff: serverSprintHeld = false; SetSprintDribbleInput(false, direction); break;
+            case BallActionKind.SprintDribbleOn:
+                serverSprintHeld = true; serverBurstSprint = false;
+                SetSprintDribbleInput(true, direction);
+                break;
+            case BallActionKind.SprintDribbleBurstOn:
+                serverSprintHeld = true; serverBurstSprint = true;
+                SetSprintDribbleInput(true, direction, burstSprint: true);
+                break;
+            case BallActionKind.SprintDribbleOff:
+                serverSprintHeld = false; serverBurstSprint = false;
+                SetSprintDribbleInput(false, direction);
+                break;
         }
     }
 

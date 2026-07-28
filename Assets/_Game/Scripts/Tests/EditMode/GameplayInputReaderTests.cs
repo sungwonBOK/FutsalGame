@@ -361,8 +361,14 @@ public class ContextualPlayerActionRouterTests : InputTestFixture
             {
                 ""name"": ""Player"",
                 ""id"": ""e8f7c1cb-0bcb-40e4-b754-53218eacfe58"",
-                ""actions"": [{ ""name"": ""ContextF"", ""type"": ""Button"", ""id"": ""985a5fc4-0583-4310-a2c8-0b2e2fa42a37"" }],
-                ""bindings"": [{ ""id"": ""c7994d7c-f230-4994-9b02-a6c53aea5ae8"", ""path"": ""<Keyboard>/f"", ""action"": ""ContextF"" }]
+                ""actions"": [
+                    { ""name"": ""ContextF"", ""type"": ""Button"", ""id"": ""985a5fc4-0583-4310-a2c8-0b2e2fa42a37"" },
+                    { ""name"": ""SecondaryAction"", ""type"": ""Button"", ""id"": ""9cc128f2-0e0a-4c9c-b785-449a3d4df9d3"" }
+                ],
+                ""bindings"": [
+                    { ""id"": ""c7994d7c-f230-4994-9b02-a6c53aea5ae8"", ""path"": ""<Keyboard>/f"", ""action"": ""ContextF"" },
+                    { ""id"": ""7dbd2a8a-af4e-4dfa-b1cb-45b89fbc493a"", ""path"": ""<Mouse>/rightButton"", ""action"": ""SecondaryAction"" }
+                ]
             }
         ]
     }";
@@ -394,6 +400,45 @@ public class ContextualPlayerActionRouterTests : InputTestFixture
             router.Process(reader, Vector3.forward, Vector3.forward);
 
             Assert.That(motor.IsDashing, Is.True);
+        }
+        finally
+        {
+            typeof(GameplayInputReader)
+                .GetMethod("OnDisable", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(reader, null);
+            UnityEngine.Object.DestroyImmediate(player);
+            UnityEngine.Object.DestroyImmediate(reader.gameObject);
+            UnityEngine.Object.DestroyImmediate(inputAsset);
+        }
+    }
+
+    [Test]
+    public void SecondaryAction_StartsCrossPunchWhenPlayerDoesNotHaveBall()
+    {
+        Mouse mouse = InputSystem.AddDevice<Mouse>();
+        InputActionAsset inputAsset = InputActionAsset.FromJson(ContextFInputJson);
+        GameplayInputReader reader = CreateReader(inputAsset);
+        GameObject player = new GameObject("Cross Punch Player");
+        player.AddComponent<Rigidbody>();
+        CharacterState state = player.AddComponent<CharacterState>();
+        CharacterMotor motor = player.AddComponent<CharacterMotor>();
+        CharacterLocomotion locomotion = player.AddComponent<CharacterLocomotion>();
+        CombatController combat = player.AddComponent<CombatController>();
+        ContextualPlayerActionRouter router = new ContextualPlayerActionRouter(locomotion, combat, ball: null);
+
+        try
+        {
+            InvokeAwake(state);
+            InvokeAwake(motor);
+            InvokeAwake(locomotion);
+            InvokeAwake(combat);
+
+            Press(mouse.rightButton);
+            Assert.That(reader.ReadButton(GameplayInputAction.SecondaryAction).WasPressed, Is.True);
+
+            router.Process(reader, Vector3.forward, Vector3.forward);
+
+            Assert.That(combat.CrossPunchRemaining, Is.GreaterThan(0f));
         }
         finally
         {

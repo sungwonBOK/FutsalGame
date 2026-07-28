@@ -24,6 +24,7 @@ public class CharacterAnimator : MonoBehaviour
     private const float TeleportSqrThreshold = 4f;
 
     private CharacterState state;
+    private CharacterLocomotion locomotion;
     private Vector3 lastPosition;
     private float smoothedSpeed;
 
@@ -31,11 +32,13 @@ public class CharacterAnimator : MonoBehaviour
     private static readonly int PShoot = Animator.StringToHash("Shoot");
     private static readonly int PSlide = Animator.StringToHash("Slide");
     private static readonly int PPunch = Animator.StringToHash("Punch");
+    private static readonly int PCrossPunch = Animator.StringToHash("CrossPunch");
     private static readonly int PStunned = Animator.StringToHash("IsStunned");
 
     private void Awake()
     {
         state = GetComponent<CharacterState>();
+        locomotion = GetComponent<CharacterLocomotion>();
         if (animator == null) animator = GetComponentInChildren<Animator>();
         lastPosition = transform.position;
     }
@@ -52,6 +55,7 @@ public class CharacterAnimator : MonoBehaviour
         if (animator == null) return;
 
         animator.SetFloat(PSpeed, MeasureSpeed());
+        animator.speed = locomotion != null && locomotion.IsBurstSprinting ? 1.4f : 1f;
 
         // 기절 상태 → IsStunned
         animator.SetBool(PStunned, state != null && state.IsStunned);
@@ -84,4 +88,5 @@ public class CharacterAnimator : MonoBehaviour
     public void PlayShoot() { if (animator != null) animator.SetTrigger(PShoot); }
     public void PlaySlide() { if (animator != null) animator.SetTrigger(PSlide); }
     public void PlayPunch() { if (animator != null) animator.SetTrigger(PPunch); }
+    public void PlayCrossPunch() { if (animator != null) animator.SetTrigger(PCrossPunch); }
 }

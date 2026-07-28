@@ -2,6 +2,8 @@ using UnityEngine;
 
 public class PlayerInput : MonoBehaviour
 {
+    private const float SprintBoostDoubleTapWindow = 0.25f;
+
     [SerializeField] private Transform movementReference;
     [SerializeField] private GameplayInputReader inputReader;
 
@@ -10,6 +12,8 @@ public class PlayerInput : MonoBehaviour
     private PlayerBallHandler ball;
     private CharacterState state;
     private ContextualPlayerActionRouter actionRouter;
+    private float lastSprintPressTime = -1f;
+    private bool burstSprintRequested;
 
     private void Awake()
     {
@@ -40,16 +44,20 @@ public class PlayerInput : MonoBehaviour
         }
 
         Vector2 moveInput = inputReader != null ? inputReader.ReadMove() : Vector2.zero;
-        bool sprint = inputReader != null && inputReader.ReadButton(GameplayInputAction.Sprint).IsPressed;
+        GameplayInputButtonState sprintButton = inputReader != null
+            ? inputReader.ReadButton(GameplayInputAction.Sprint)
+            : default;
+        bool sprint = sprintButton.IsPressed;
+        UpdateBurstSprintRequest(sprintButton);
         bool hasBall = ball != null && ball.HasBall;
         Vector3 moveDirection = BuildCameraRelativeMoveDirection(moveInput, movementReference);
-        locomotion.SetPlayerMoveInput(moveInput, moveDirection, sprint, hasBall);
+        locomotion.SetPlayerMoveInput(moveInput, moveDirection, sprint, hasBall, burstSprintRequested);
 
         Vector3 characterActionDirection = locomotion.ActionDirection;
         Vector3 ballAimDirection = BuildPlanarCameraForward(movementReference, transform.forward);
 
         if (ball != null)
-            ball.SetSprintDribbleInput(sprint, characterActionDirection);
+            ball.SetSprintDribbleInput(sprint, characterActionDirection, burstSprintRequested);
 
         actionRouter?.Process(inputReader, characterActionDirection, ballAimDirection);
     }
@@ -91,8 +99,29 @@ public class PlayerInput : MonoBehaviour
         actionRouter?.ClearPreparedActions();
     }
 
+    public static bool IsSprintBoostTap(float now, float previousPressTime)
+    {
+        return previousPressTime >= 0f
+            && now >= previousPressTime
+            && now - previousPressTime <= SprintBoostDoubleTapWindow;
+    }
+
     private void OnDisable()
     {
+        burstSprintRequested = false;
+        lastSprintPressTime = -1f;
         ClearPreparedActions();
+    }
+
+    private void UpdateBurstSprintRequest(GameplayInputButtonState sprintButton)
+    {
+        if (sprintButton.WasPressed)
+        {
+            burstSprintRequested = IsSprintBoostTap(Time.time, lastSprintPressTime);
+            lastSprintPressTime = Time.time;
+        }
+
+        if (!sprintButton.IsPressed)
+            burstSprintRequested = false;
     }
 }
