@@ -24,6 +24,10 @@ public class GoalTrigger : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
+        // 온라인에서는 공이 클라이언트에서도 트리거를 통과하므로, 득점 판정은 서버만 한다.
+        // (클라가 각자 세면 같은 골이 여러 번 들어간다.)
+        if (!NetworkBall.LocalHasAuthority) return;
+
         Rigidbody rb = other.attachedRigidbody;
         if (rb == null) return;
         if (rb.gameObject.name != ballObjectName) return;

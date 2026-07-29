@@ -57,6 +57,17 @@ public class CameraViewSwitcher : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// 따라갈 대상을 바꾼다. 온라인 경기에서는 내가 조종할 선수가 스폰된 뒤에야 정해지므로
+    /// 그 시점에 다시 연결해야 시점 전환이 엉뚱한 캐릭터를 비추지 않는다.
+    /// </summary>
+    public void SetTarget(Transform newTarget)
+    {
+        target = newTarget;
+        if (target != null)
+            smoothedYaw = target.eulerAngles.y;
+    }
+
     private void Update()
     {
         if (inputReader != null &&

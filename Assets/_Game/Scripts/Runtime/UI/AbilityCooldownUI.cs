@@ -113,6 +113,17 @@ public class AbilityCooldownUI : MonoBehaviour
         BuildHierarchy();
     }
 
+    /// <summary>
+    /// HUD가 따라갈 캐릭터를 바꾼다. 온라인 경기에서는 선수가 스폰된 뒤에야
+    /// 내가 조종할 캐릭터가 정해지므로 그 시점에 다시 연결한다.
+    /// </summary>
+    public void SetTarget(CombatController combat)
+    {
+        playerCombat = combat;
+        playerState = combat != null ? combat.GetComponent<CharacterState>() : null;
+        playerLocomotion = combat != null ? combat.GetComponent<CharacterLocomotion>() : null;
+    }
+
     private void Update()
     {
         if (root == null) return;

@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -70,9 +71,26 @@ public class GameManager : MonoBehaviour
     public string CenterMessage { get; private set; } = "";
 
     // 시작 상태 저장 (리셋용)
-    private Vector3 ballStart, playerStart, opponentStart;
-    private Quaternion playerStartRot, opponentStartRot;
+    private Vector3 ballStart;
     private Collider ballCollider;
+
+    /// <summary>리셋 대상 캐릭터와 그 시작 위치. 오프라인은 씬 배치분, 온라인은 스폰된 선수들이 등록된다.</summary>
+    private readonly struct RegisteredCharacter
+    {
+        public readonly Transform Target;
+        public readonly Vector3 StartPosition;
+        public readonly Quaternion StartRotation;
+
+        public RegisteredCharacter(Transform target, Vector3 startPosition, Quaternion startRotation)
+        {
+            Target = target;
+            StartPosition = startPosition;
+            StartRotation = startRotation;
+        }
+    }
+
+    private readonly List<RegisteredCharacter> registeredCharacters = new List<RegisteredCharacter>();
+
     private ThirdPersonActionCamera actionCamera;
     private bool scoringLocked; // 한 골에 대한 중복 처리 방지
 
@@ -97,8 +115,10 @@ public class GameManager : MonoBehaviour
     {
         // 시작 위치/회전 저장 (리셋에 사용).
         if (ball != null) ballStart = ball.position;
-        if (player != null) { playerStart = player.position; playerStartRot = player.rotation; }
-        if (opponent != null) { opponentStart = opponent.position; opponentStartRot = opponent.rotation; }
+
+        // 씬에 미리 배치된 캐릭터를 리셋 대상으로 등록한다(오프라인 경기 경로).
+        RegisterCharacter(player);
+        RegisterCharacter(opponent);
 
         if (autoStartMatch)
             StartCoroutine(NewMatchRoutine());
@@ -107,12 +127,21 @@ public class GameManager : MonoBehaviour
     /// <summary>메뉴/로비에서 경기를 시작시킬 때 호출. (autoStartMatch를 끈 경우)</summary>
     public void BeginMatch()
     {
+        // 온라인에서는 경기 흐름을 서버 한 곳에서만 굴린다.
+        // 클라이언트는 복제받은 상태를 반영하기만 한다(ApplyReplicatedState).
+        if (!NetworkMatchState.LocalHasAuthority)
+            return;
+
         StopAllCoroutines();
         StartCoroutine(NewMatchRoutine());
     }
 
     private void Update()
     {
+        // 경기 진행(시간·일시정지·재시작)은 흐름을 굴리는 쪽에서만 판단한다.
+        if (!NetworkMatchState.LocalHasAuthority)
+            return;
+
         // Pause: 일시정지/재개 토글 (종료 화면에서는 무시).
         if (inputReader != null &&
             inputReader.ReadButton(GameplayInputAction.Pause).WasPressed &&
@@ -141,11 +170,19 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    /// <summary>일시정지/재개 토글. Time.timeScale로 게임 전체를 멈춘다.</summary>
+    /// <summary>
+    /// 일시정지/재개 토글.
+    /// 오프라인에서는 Time.timeScale로 전부 멈추지만, 온라인에서는 타임스케일을 건드리지 않는다.
+    /// 내 쪽 시간만 멈춰봐야 남들은 계속 움직이고, 네트워크 보간까지 흔들리기 때문이다.
+    /// 대신 복제되는 일시정지 상태가 PlayActive를 통해 모두의 조작을 잠근다.
+    /// </summary>
     private void TogglePause()
     {
         IsPaused = !IsPaused;
-        Time.timeScale = IsPaused ? 0f : 1f;
+
+        if (NetworkMatchState.Instance == null || !NetworkMatchState.Instance.IsSpawned)
+            Time.timeScale = IsPaused ? 0f : 1f;
+
         RefreshPlayActive();
     }
 
@@ -153,6 +190,28 @@ public class GameManager : MonoBehaviour
     private void RefreshPlayActive()
     {
         PlayActive = (State == MatchState.Playing) && !IsPaused;
+    }
+
+    /// <summary>
+    /// 서버가 복제해준 경기 상태를 그대로 반영한다(클라이언트 전용).
+    /// 점수·시간·중앙 메시지는 MatchUI가 읽어 그리고, PlayActive는 조작 잠금에 쓰인다.
+    /// </summary>
+    public void ApplyReplicatedState(
+        MatchState replicatedState,
+        int replicatedPlayerScore,
+        int replicatedOpponentScore,
+        float replicatedTimeRemaining,
+        bool replicatedPaused,
+        string replicatedCenterMessage)
+    {
+        State = replicatedState;
+        PlayerScore = replicatedPlayerScore;
+        OpponentScore = replicatedOpponentScore;
+        TimeRemaining = replicatedTimeRemaining;
+        IsPaused = replicatedPaused;
+        CenterMessage = replicatedCenterMessage ?? "";
+
+        RefreshPlayActive();
     }
 
     // --- 경기 흐름 ---
@@ -204,7 +263,19 @@ public class GameManager : MonoBehaviour
         if (playerScored) PlayerScore++;
         else OpponentScore++;
 
-        // 연출: 골 축하 파티클(득점 팀 색으로 tint) + 소리 (기존 그대로).
+        // 득점 연출은 한 번만 터지는 것이라 상태 복제로는 전달되지 않는다. 서버가 따로 알린다.
+        if (NetworkMatchState.Instance != null && NetworkMatchState.Instance.IsSpawned)
+            NetworkMatchState.Instance.BroadcastGoalPresentation(goalPos, playerScored);
+        else
+            PlayGoalPresentationLocal(goalPos, playerScored);
+
+        bool matchPoint = targetScore > 0 && (PlayerScore >= targetScore || OpponentScore >= targetScore);
+        StartCoroutine(GoalRoutine(matchPoint));
+    }
+
+    /// <summary>득점 연출(축하 파티클·환호·카메라 흔들림)을 이 클라이언트에서만 재생한다.</summary>
+    public void PlayGoalPresentationLocal(Vector3 goalPos, bool playerScored)
+    {
         if (goalEffectPrefab != null)
         {
             GameObject fx = Instantiate(goalEffectPrefab, goalPos + Vector3.up * 1f, Quaternion.identity);
@@ -217,9 +288,6 @@ public class GameManager : MonoBehaviour
         }
         if (AudioManager.Instance != null) AudioManager.Instance.PlayGoal();
         if (actionCamera != null) actionCamera.AddShake(0.35f);
-
-        bool matchPoint = targetScore > 0 && (PlayerScore >= targetScore || OpponentScore >= targetScore);
-        StartCoroutine(GoalRoutine(matchPoint));
     }
 
     /// <summary>"GOAL!" 표시 → (네트 연출) → 킥오프 카운트다운 또는 경기 종료.</summary>
@@ -267,6 +335,11 @@ public class GameManager : MonoBehaviour
     private void ResetBall()
     {
         PlayerBallHandler.ClearPossession();
+
+        // 온라인에서는 공을 서버만 움직인다. 클라가 같이 옮기면 복제 위치와 싸운다.
+        if (!NetworkBall.LocalHasAuthority)
+            return;
+
         if (ball != null)
         {
             if (ballCollider != null) ballCollider.enabled = true;
@@ -280,6 +353,10 @@ public class GameManager : MonoBehaviour
 
     private void EnforceBallBounds()
     {
+        // 공이 코트를 벗어났는지 판정하고 되돌리는 것도 서버 몫이다.
+        if (!NetworkBall.LocalHasAuthority)
+            return;
+
         if (ball == null || PlayerBallHandler.CurrentOwner != null)
             return;
 
@@ -294,17 +371,69 @@ public class GameManager : MonoBehaviour
             ResetBall();
     }
 
-    /// <summary>플레이어와 AI를 시작 위치로 되돌린다.</summary>
+    /// <summary>등록된 모든 캐릭터를 시작 위치로 되돌린다.</summary>
     private void ResetCharacters()
     {
-        ResetCharacter(player, playerStart, playerStartRot);
-        ResetCharacter(opponent, opponentStart, opponentStartRot);
+        for (int i = registeredCharacters.Count - 1; i >= 0; i--)
+        {
+            RegisteredCharacter entry = registeredCharacters[i];
+            if (entry.Target == null)
+            {
+                registeredCharacters.RemoveAt(i); // 파괴된(디스폰된) 선수 정리
+                continue;
+            }
+            ResetCharacter(entry.Target, entry.StartPosition, entry.StartRotation);
+        }
+    }
+
+    /// <summary>현재 위치를 시작 위치로 삼아 리셋 대상에 등록한다(씬 배치 캐릭터용).</summary>
+    private void RegisterCharacter(Transform target)
+    {
+        if (target != null)
+            RegisterCharacter(target, target.position, target.rotation);
+    }
+
+    /// <summary>
+    /// 리셋(킥오프/득점 후) 대상으로 캐릭터를 등록한다.
+    /// 네트워크로 스폰된 선수가 자신의 스폰 위치와 함께 호출한다.
+    /// </summary>
+    public void RegisterCharacter(Transform target, Vector3 startPosition, Quaternion startRotation)
+    {
+        if (target == null) return;
+
+        for (int i = 0; i < registeredCharacters.Count; i++)
+            if (registeredCharacters[i].Target == target) return; // 중복 등록 방지
+
+        registeredCharacters.Add(new RegisteredCharacter(target, startPosition, startRotation));
+    }
+
+    /// <summary>디스폰/파괴된 캐릭터를 리셋 대상에서 제거한다.</summary>
+    public void UnregisterCharacter(Transform target)
+    {
+        if (target == null) return;
+
+        for (int i = registeredCharacters.Count - 1; i >= 0; i--)
+            if (registeredCharacters[i].Target == target)
+                registeredCharacters.RemoveAt(i);
     }
 
     private void ResetCharacter(Transform t, Vector3 pos, Quaternion rot)
     {
         if (t == null) return;
 
+        // 네트워크 선수는 이동 권한이 소유자에게 있으므로 여기서 직접 옮기면 곧 덮어써진다.
+        // 서버가 소유자에게 이동을 지시하고, 클라이언트는 자기 차례를 기다린다.
+        NetworkPlayerAgent agent = t.GetComponent<NetworkPlayerAgent>();
+        if (agent != null && agent.IsSpawned)
+            agent.ServerRequestTeleport(pos, rot);
+        else
+            ApplyTransformReset(t, pos, rot);
+
+        ClearCharacterState(t);
+    }
+
+    private void ApplyTransformReset(Transform t, Vector3 pos, Quaternion rot)
+    {
         Rigidbody rb = t.GetComponent<Rigidbody>();
         if (rb != null)
         {
@@ -313,7 +442,11 @@ public class GameManager : MonoBehaviour
         }
         t.position = pos;
         t.rotation = rot;
+    }
 
+    /// <summary>기절·이동·전투·입력 등 로컬 상태를 초기화한다(트랜스폼과 달리 어디서 돌아도 안전).</summary>
+    private void ClearCharacterState(Transform t)
+    {
         CharacterState cs = t.GetComponent<CharacterState>();
         if (cs != null) cs.ResetState(); // 기절 등 초기화
 

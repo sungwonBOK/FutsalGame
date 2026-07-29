@@ -1,5 +1,13 @@
 using UnityEngine;
 
+/// <summary>
+/// 공의 물리와 소유 상태를 관리한다.
+///
+/// 온라인 경기에서는 공에 관한 판단이 전부 서버에서만 이뤄져야 하므로,
+/// 상태를 바꾸는 모든 진입점에서 권한(<see cref="NetworkBall.LocalHasAuthority"/>)을 확인한다.
+/// 권한이 없는 쪽에서는 조용히 무시되고, 대신 서버가 복제해준 소유 상태를 받아 반영한다.
+/// 오프라인 플레이에서는 항상 권한이 있으므로 기존과 똑같이 동작한다.
+/// </summary>
 [RequireComponent(typeof(Rigidbody))]
 public class BallController : MonoBehaviour
 {
@@ -46,6 +54,10 @@ public class BallController : MonoBehaviour
 
     private void Update()
     {
+        // 소유자와 너무 멀어지면 공을 놓는 판정. 서버만 내린다.
+        if (!NetworkBall.LocalHasAuthority)
+            return;
+
         float maxOwnerDistance = OwnerMaxDistance;
         if (CurrentOwner == null || maxOwnerDistance <= 0f)
             return;
@@ -61,14 +73,40 @@ public class BallController : MonoBehaviour
 
     public bool TryAcquire(PlayerBallHandler owner)
     {
+        if (!NetworkBall.LocalHasAuthority)
+            return false;
         if (owner == null)
             return false;
         if (CurrentOwner != null && CurrentOwner != owner)
             return false;
 
-        CurrentOwner = owner;
+        SetOwner(owner);
         SetPossessionPhysics();
         return true;
+    }
+
+    /// <summary>
+    /// 서버가 복제해준 소유자를 그대로 반영한다(위치는 NetworkTransform이 가져온다).
+    /// 클라이언트에서 HasBall 같은 판단이 맞으려면 이 값이 서버와 같아야 한다.
+    ///
+    /// 콜라이더도 함께 맞춘다. 소유 중에는 공이 선수 발밑에 붙어 있어서,
+    /// 클라이언트에만 콜라이더가 살아 있으면 그 선수를 밀어 떨리게 만든다.
+    /// </summary>
+    public void MirrorOwner(PlayerBallHandler owner)
+    {
+        CurrentOwner = owner;
+
+        if (ballCollider != null)
+            ballCollider.enabled = owner == null;
+    }
+
+    /// <summary>소유자를 바꾸고, 온라인이면 모든 클라에 알린다.</summary>
+    private void SetOwner(PlayerBallHandler owner)
+    {
+        CurrentOwner = owner;
+
+        if (NetworkBall.Instance != null)
+            NetworkBall.Instance.ServerPublishOwner(owner);
     }
 
     public bool HasOwner(PlayerBallHandler owner)
@@ -78,6 +116,8 @@ public class BallController : MonoBehaviour
 
     public bool Release(PlayerBallHandler owner, Vector3 impulse)
     {
+        if (!NetworkBall.LocalHasAuthority)
+            return false;
         if (!HasOwner(owner))
             return false;
 
@@ -87,10 +127,12 @@ public class BallController : MonoBehaviour
 
     public void ClearOwner()
     {
+        if (!NetworkBall.LocalHasAuthority)
+            return;
         if (CurrentOwner == null)
             return;
 
-        CurrentOwner = null;
+        SetOwner(null);
         RestoreFreeBallPhysics(Vector3.zero);
     }
 
@@ -102,6 +144,9 @@ public class BallController : MonoBehaviour
 
     public void MoveToDribblePosition(PlayerBallHandler owner, Vector3 position)
     {
+        // 드리블 중 공 위치도 서버가 정하고 클라는 복제받는다.
+        if (!NetworkBall.LocalHasAuthority)
+            return;
         if (!HasOwner(owner))
             return;
 
@@ -117,12 +162,18 @@ public class BallController : MonoBehaviour
 
     public void AddReleaseVelocity(Vector3 velocity)
     {
+        if (!NetworkBall.LocalHasAuthority)
+            return;
+
         if (CurrentOwner == null && body != null)
             body.linearVelocity += velocity;
     }
 
     public void AddReleaseImpulse(Vector3 impulse)
     {
+        if (!NetworkBall.LocalHasAuthority)
+            return;
+
         if (CurrentOwner == null && body != null && impulse.sqrMagnitude > 0.0001f)
             body.AddForce(impulse, ForceMode.Impulse);
     }
@@ -139,7 +190,7 @@ public class BallController : MonoBehaviour
 
     private void ReleaseCurrentOwner(Vector3 impulse)
     {
-        CurrentOwner = null;
+        SetOwner(null);
         RestoreFreeBallPhysics(impulse);
     }
 

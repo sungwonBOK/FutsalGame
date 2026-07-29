@@ -70,6 +70,16 @@ public class SimpleAIController : MonoBehaviour
     /// <summary>현재 AI 상태 (디버그/확인용).</summary>
     public AIState CurrentState => current;
 
+    /// <summary>
+    /// 네트워크로 스폰된 AI는 팀이 정해진 뒤에야 공격/수비 골을 알 수 있으므로
+    /// 서버가 스폰 직후 이 메서드로 목표 골대를 지정한다.
+    /// </summary>
+    public void ConfigureGoals(Transform attack, Transform own)
+    {
+        if (attack != null) attackGoal = attack;
+        if (own != null) ownGoal = own;
+    }
+
     private void Awake()
     {
         state = GetComponent<CharacterState>();
@@ -90,13 +100,27 @@ public class SimpleAIController : MonoBehaviour
         CacheOpponents();
     }
 
+    private void OnEnable()
+    {
+        // 네트워크 경기에서는 선수들이 순차적으로 스폰되므로, 켜지는 시점에 상대 목록을 다시 잡는다.
+        CacheOpponents();
+    }
+
+    /// <summary>
+    /// 상대 목록을 다시 수집한다. 네트워크 경기에서 모든 선수가 스폰된 뒤
+    /// 서버가 호출해 캐시가 뒤처지지 않게 한다.
+    /// </summary>
+    public void RefreshOpponents() => CacheOpponents();
+
     private void CacheOpponents()
     {
         CombatController[] all = FindObjectsByType<CombatController>(FindObjectsInactive.Exclude);
         List<CombatController> others = new List<CombatController>(all.Length);
         foreach (CombatController candidate in all)
         {
-            if (candidate != combat)
+            // 경기에서 빠진 캐릭터(온라인 경기의 오프라인 배치분)는 오브젝트가 남아 있어도
+            // 컴포넌트가 꺼져 있다. 이런 상대를 쫓아다니지 않도록 걸러낸다.
+            if (candidate != combat && candidate.isActiveAndEnabled)
                 others.Add(candidate);
         }
 

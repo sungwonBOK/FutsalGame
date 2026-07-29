@@ -26,15 +26,29 @@ public class PlayerInput : MonoBehaviour
         state = GetComponent<CharacterState>();
         actionRouter = new ContextualPlayerActionRouter(locomotion, combat, ball);
 
-        if (inputReader == null)
-            inputReader = FindAnyObjectByType<GameplayInputReader>();
+        EnsureInputReader();
 
         if (movementReference == null && Camera.main != null)
             movementReference = Camera.main.transform;
     }
 
+    /// <summary>
+    /// 입력 리더를 확보한다. 네트워크로 스폰된 선수는 씬이 어떤 상태일 때 생길지 알 수 없어
+    /// Awake 시점에 못 찾는 경우가 있으므로, 없으면 매 프레임 다시 찾는다.
+    /// (한 번 못 찾고 끝내면 그 선수는 영영 조작이 되지 않는다.)
+    /// </summary>
+    private void EnsureInputReader()
+    {
+        if (inputReader != null && inputReader.isActiveAndEnabled)
+            return;
+
+        inputReader = FindAnyObjectByType<GameplayInputReader>();
+    }
+
     private void Update()
     {
+        EnsureInputReader();
+
         if (!GameManager.PlayActive || (state != null && state.IsStunned))
         {
             locomotion.SetPlayerMoveInput(Vector2.zero, sprint: false, hasBall: ball != null && ball.HasBall);
