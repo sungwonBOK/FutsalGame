@@ -23,14 +23,17 @@ public class CombatBallConfigTests
     }
 
     [Test]
-    public void CombatController_CooldownPropertiesReadConfigValues()
+    public void CombatController_CooldownPropertiesReadActionCatalogValues()
     {
         GameObject player = new GameObject("Combat Player");
         CombatConfig config = ScriptableObject.CreateInstance<CombatConfig>();
 
         try
         {
-            config.Punch.cooldown = 1.7f;
+            config.Punch.cooldown = 9f;
+            CombatActionDefinition basicPunch = config.Actions[0];
+            basicPunch.cooldown = 1.7f;
+            config.Actions[0] = basicPunch;
             config.Tackle.cooldown = 4.1f;
 
             player.AddComponent<Rigidbody>();
@@ -46,6 +49,27 @@ public class CombatBallConfigTests
         {
             Object.DestroyImmediate(player);
             Object.DestroyImmediate(config);
+        }
+    }
+
+    [Test]
+    public void CombatController_AttachesDefenseComponent()
+    {
+        GameObject player = new GameObject("Combat Player");
+
+        try
+        {
+            player.AddComponent<Rigidbody>();
+            player.AddComponent<CharacterState>();
+            player.AddComponent<CharacterMotor>();
+            CombatController combat = player.AddComponent<CombatController>();
+            InvokePrivate(combat, "Awake");
+
+            Assert.That(player.GetComponent<DefenseController>(), Is.Not.Null);
+        }
+        finally
+        {
+            Object.DestroyImmediate(player);
         }
     }
 
@@ -142,23 +166,84 @@ public class CombatBallConfigTests
     }
 
     [Test]
-    public void CombatConfig_DefaultCrossPunchMatchesBasicPunchButUsesDoubleAnimationSpeed()
+    public void CombatConfig_DefaultBasicPunchUsesReducedKnockbackAndKeepsBall()
     {
         CombatConfig config = ScriptableObject.CreateInstance<CombatConfig>();
 
         try
         {
             Assert.That(config.TryGetAction(CombatActionId.BasicPunch, out CombatActionDefinition basic), Is.True);
-            Assert.That(config.TryGetAction(CombatActionId.CrossPunch, out CombatActionDefinition cross), Is.True);
-            Assert.That(cross.cooldown, Is.EqualTo(basic.cooldown));
-            Assert.That(cross.range, Is.EqualTo(basic.range));
-            Assert.That(cross.knockbackForce, Is.EqualTo(basic.knockbackForce));
-            Assert.That(cross.animationSpeed, Is.EqualTo(2f));
-            Assert.That(cross.releaseBallOnHit, Is.True);
+            Assert.That(basic.knockbackForce, Is.EqualTo(4f));
+            Assert.That(basic.releaseBallOnHit, Is.False);
+            Assert.That(basic.ballKnockbackForce, Is.EqualTo(0f));
         }
         finally
         {
             Object.DestroyImmediate(config);
+        }
+    }
+
+    [Test]
+    public void CombatConfig_DefaultCrossPunchKeepsItsStrongerBallReleaseProfile()
+    {
+        CombatConfig config = ScriptableObject.CreateInstance<CombatConfig>();
+
+        try
+        {
+            Assert.That(config.TryGetAction(CombatActionId.CrossPunch, out CombatActionDefinition cross), Is.True);
+            Assert.That(cross.knockbackForce, Is.EqualTo(8f));
+            Assert.That(cross.releaseBallOnHit, Is.True);
+            Assert.That(cross.ballKnockbackForce, Is.EqualTo(6f));
+            Assert.That(cross.animationSpeed, Is.EqualTo(2f));
+        }
+        finally
+        {
+            Object.DestroyImmediate(config);
+        }
+    }
+
+    [Test]
+    public void CombatController_BasicPunchKeepsVictimBallPossession()
+    {
+        GameObject ballObject = new GameObject("Ball");
+        GameObject attackerObject = new GameObject("Attacker");
+        GameObject victimObject = new GameObject("Victim");
+
+        try
+        {
+            ballObject.AddComponent<SphereCollider>();
+            Rigidbody ballBody = ballObject.AddComponent<Rigidbody>();
+            BallController ball = ballObject.AddComponent<BallController>();
+            InvokePrivate(ball, "Awake");
+
+            victimObject.transform.position = Vector3.forward;
+            victimObject.AddComponent<Rigidbody>();
+            victimObject.AddComponent<SphereCollider>();
+            CharacterState victimState = victimObject.AddComponent<CharacterState>();
+            PlayerBallHandler victimBall = victimObject.AddComponent<PlayerBallHandler>();
+            SetPrivateField(victimBall, "ballRb", ballBody);
+            InvokePrivate(victimState, "Awake");
+            InvokePrivate(victimBall, "Awake");
+            Assert.That(ball.TryAcquire(victimBall), Is.True);
+
+            attackerObject.AddComponent<Rigidbody>();
+            CharacterState attackerState = attackerObject.AddComponent<CharacterState>();
+            CharacterMotor attackerMotor = attackerObject.AddComponent<CharacterMotor>();
+            CombatController combat = attackerObject.AddComponent<CombatController>();
+            InvokePrivate(attackerState, "Awake");
+            InvokePrivate(attackerMotor, "Awake");
+            InvokePrivate(combat, "Awake");
+            Physics.SyncTransforms();
+
+            combat.Punch(Vector3.forward);
+
+            Assert.That(ball.CurrentOwner, Is.SameAs(victimBall));
+        }
+        finally
+        {
+            Object.DestroyImmediate(attackerObject);
+            Object.DestroyImmediate(victimObject);
+            Object.DestroyImmediate(ballObject);
         }
     }
 

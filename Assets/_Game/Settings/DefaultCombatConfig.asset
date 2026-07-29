@@ -26,10 +26,10 @@ MonoBehaviour:
     cooldown: 1.2
     range: 1.3
     radius: 0.7
-    knockbackForce: 8
+    knockbackForce: 4
     hitStunTime: 1
-    releaseBallOnHit: 1
-    ballKnockbackForce: 6
+    releaseBallOnHit: 0
+    ballKnockbackForce: 0
     animationTrigger: Punch
     animationSpeed: 1
   - id: 1
@@ -52,6 +52,13 @@ MonoBehaviour:
     knockbackForce: 8
     hitStunTime: 1
     ballKnockForce: 6
+  Grab:
+    range: 1.3
+    radius: 0.7
+    duration: 1.5
+    cancelDelay: 0.5
+    holderMovementMultiplier: 0.15
+    animationSpeed: 1.5
   Assist:
     forwardAutoAimRange: 2
     forwardAutoAimAngle: 30

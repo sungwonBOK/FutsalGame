@@ -17,11 +17,17 @@ public class CharacterState : MonoBehaviour
     private NetworkPlayerAgent netAgent;
     private float stunUntil = -999f;
     private float invulnerableUntil = -999f;
+    private readonly GrabControlState grabControl = new GrabControlState();
+    private GrabController activeGrab;
 
     /// <summary>현재 기절 중인가.</summary>
     public bool IsStunned { get; private set; }
     public bool IsInvulnerable => Time.time < invulnerableUntil;
     public float LastEvadeTime { get; private set; } = -999f;
+    public bool IsHolding => grabControl.IsHolding;
+    public bool IsHeld => grabControl.IsHeld;
+    public bool IsGrabRestricted => grabControl.RestrictsMovement;
+    public float MovementMultiplier => grabControl.MovementMultiplier;
 
     /// <summary>기절 시간을 직접 관리해도 되는지. 오프라인이면 항상, 온라인이면 서버만.</summary>
     private bool HasStateAuthority => netAgent == null || !netAgent.IsSpawned || netAgent.IsServer;
@@ -91,11 +97,42 @@ public class CharacterState : MonoBehaviour
         LastEvadeTime = Time.time;
     }
 
+    public bool CanUseGrabAction(GameplayInputAction action, float now)
+    {
+        return grabControl.CanUse(action, now);
+    }
+
+    public bool TryEscapeGrab()
+    {
+        return IsHeld && activeGrab != null && activeGrab.Release();
+    }
+
+    public void BeginHolding(float now, float cancelDelay, float movementMultiplier)
+    {
+        grabControl.BeginHolding(now, cancelDelay, movementMultiplier);
+    }
+
+    public void BeginHeld(GrabController grab)
+    {
+        grabControl.BeginHeld();
+        activeGrab = grab;
+    }
+
+    public void ClearGrabState(GrabController expectedGrab = null)
+    {
+        if (expectedGrab != null && activeGrab != expectedGrab)
+            return;
+
+        grabControl.Clear();
+        activeGrab = null;
+    }
+
     /// <summary>기절 등 상태를 초기화한다(킥오프 리셋용).</summary>
     public void ResetState()
     {
         IsStunned = false;
         stunUntil = -999f;
         invulnerableUntil = -999f;
+        ClearGrabState();
     }
 }

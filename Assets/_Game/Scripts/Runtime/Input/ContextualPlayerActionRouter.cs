@@ -44,6 +44,18 @@ public sealed class ContextualPlayerActionRouter
         GameplayInputButtonState primary = inputReader.ReadButton(GameplayInputAction.PrimaryAction);
         GameplayInputButtonState secondary = inputReader.ReadButton(GameplayInputAction.SecondaryAction);
         GameplayInputButtonState contextF = inputReader.ReadButton(GameplayInputAction.ContextF);
+        GameplayInputButtonState contextQ = inputReader.ReadButton(GameplayInputAction.ContextQ);
+        GameplayInputButtonState grab = inputReader.ReadButton(GameplayInputAction.Grab);
+        GameplayInputButtonState dodge = inputReader.ReadButton(GameplayInputAction.Dodge);
+
+        if (combat != null && combat.IsGrabRestricted)
+        {
+            if (combat.IsHoldingGrab && grab.WasPressed)
+                combat.TryCancelGrab();
+            else if (combat.IsHeldByGrab && dodge.WasPressed)
+                combat.TryEscapeGrab(characterActionDirection);
+            return;
+        }
 
         bool actuallyHasBall = ball != null && ball.HasBall;
         bool opponentHasBall = !actuallyHasBall && PlayerBallHandler.CurrentOwner != null;
@@ -60,6 +72,12 @@ public sealed class ContextualPlayerActionRouter
             return;
         }
 
+        if (contextQ.WasPressed)
+        {
+            combat?.TryStartDefense();
+            return;
+        }
+
         if ((!actuallyHasBall || !mouseActionsBlocked)
             && (TryQueueOneTouch(inputReader, GameplayInputAction.QueueOneTouchPass, OneTouchIntent.Pass, ballAimDirection)
                 || TryQueueOneTouch(inputReader, GameplayInputAction.QueueOneTouchShot, OneTouchIntent.Shot, ballAimDirection)))
@@ -71,8 +89,15 @@ public sealed class ContextualPlayerActionRouter
             && oneTouchExecutor.TryExecuteQueued(oneTouchBuffer, ball, ballAimDirection))
             return;
 
-        if (inputReader.ReadButton(GameplayInputAction.Dodge).WasPressed)
+        if (dodge.WasPressed)
             locomotion?.TryDodge(characterActionDirection);
+
+        if (grab.WasPressed)
+        {
+            if (!actuallyHasBall)
+                combat?.TryGrab(characterActionDirection);
+            return;
+        }
 
         if (contextF.WasPressed)
         {

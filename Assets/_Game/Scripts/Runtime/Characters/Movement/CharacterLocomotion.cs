@@ -47,6 +47,7 @@ public class CharacterLocomotion : MonoBehaviour
     public bool IsDodging => Time.time < dodgeUntil;
     public float DodgeRemaining => Mathf.Max(0f, Config.DodgeCooldown - (Time.time - lastDodgeTime));
     public float DodgeCooldown01 => Config.DodgeCooldown <= 0f ? 0f : Mathf.Clamp01(DodgeRemaining / Config.DodgeCooldown);
+    public float DodgeCost => Config.DodgeCost;
     public bool CanDodge => state != null && !state.IsStunned && !motor.IsDashing && DodgeRemaining <= 0f && stamina >= Config.DodgeCost;
     public bool DodgeBlockedByStamina => DodgeRemaining <= 0f && stamina < Config.DodgeCost;
     public float LastDodgeRejectedTime { get; private set; } = -999f;
@@ -114,7 +115,9 @@ public class CharacterLocomotion : MonoBehaviour
         sprintRequested = sprint;
         burstSprintRequested = burstSprint;
         this.hasBall = hasBall;
-        moveDirection = state != null && state.IsStunned ? Vector3.zero : direction;
+        moveDirection = state != null && (state.IsStunned || state.IsHeld)
+            ? Vector3.zero
+            : direction * (state != null ? state.MovementMultiplier : 1f);
         RefreshMovementProfile();
         actionDirection = CharacterMovementUtility.ResolveActionDirection(HasMoveInput, moveDirection, transform.forward);
         motor.SetMovement(moveDirection, activeMovementProfile);
@@ -129,13 +132,26 @@ public class CharacterLocomotion : MonoBehaviour
         }
 
         direction = CharacterMovementUtility.FlattenOrFallback(direction, -transform.forward);
-        SpendStamina(Config.DodgeCost);
+        TrySpendStamina(Config.DodgeCost);
         lastDodgeTime = Time.time;
         dodgeUntil = Time.time + Config.DodgeDuration;
         state.SetInvulnerable(Config.DodgeInvulnerability);
         motor.Dash(direction * Config.DodgeSpeed, Config.DodgeDuration);
         RefreshMovementProfile();
         return true;
+    }
+
+    public void StopForControlRestriction()
+    {
+        rawMoveInput = Vector2.zero;
+        moveDirection = Vector3.zero;
+        sprintRequested = false;
+        IsSprinting = false;
+        burstSprintRequested = false;
+        IsBurstSprinting = false;
+        motor.CancelDash();
+        RefreshMovementProfile();
+        motor.SetMovement(Vector3.zero, activeMovementProfile);
     }
 
     public void ResetMobilityState()
@@ -186,6 +202,15 @@ public class CharacterLocomotion : MonoBehaviour
     {
         float multiplier = burstSprint ? 1.8f : 1f;
         return Mathf.Max(0f, baseDrainPerSecond) * multiplier * 0.5f;
+    }
+
+    public bool TrySpendStamina(float amount)
+    {
+        if (stamina < amount)
+            return false;
+
+        SpendStamina(amount);
+        return true;
     }
 
     private void SpendStamina(float amount)

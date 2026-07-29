@@ -362,10 +362,12 @@ public class ContextualPlayerActionRouterTests : InputTestFixture
                 ""name"": ""Player"",
                 ""id"": ""e8f7c1cb-0bcb-40e4-b754-53218eacfe58"",
                 ""actions"": [
+                    { ""name"": ""ContextQ"", ""type"": ""Button"", ""id"": ""e7591f84-9697-4799-8a59-963152ba8120"" },
                     { ""name"": ""ContextF"", ""type"": ""Button"", ""id"": ""985a5fc4-0583-4310-a2c8-0b2e2fa42a37"" },
                     { ""name"": ""SecondaryAction"", ""type"": ""Button"", ""id"": ""9cc128f2-0e0a-4c9c-b785-449a3d4df9d3"" }
                 ],
                 ""bindings"": [
+                    { ""id"": ""342c347b-f1c1-4ec6-90a6-985542e24d83"", ""path"": ""<Keyboard>/q"", ""action"": ""ContextQ"" },
                     { ""id"": ""c7994d7c-f230-4994-9b02-a6c53aea5ae8"", ""path"": ""<Keyboard>/f"", ""action"": ""ContextF"" },
                     { ""id"": ""7dbd2a8a-af4e-4dfa-b1cb-45b89fbc493a"", ""path"": ""<Mouse>/rightButton"", ""action"": ""SecondaryAction"" }
                 ]
@@ -400,6 +402,45 @@ public class ContextualPlayerActionRouterTests : InputTestFixture
             router.Process(reader, Vector3.forward, Vector3.forward);
 
             Assert.That(motor.IsDashing, Is.True);
+        }
+        finally
+        {
+            typeof(GameplayInputReader)
+                .GetMethod("OnDisable", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(reader, null);
+            UnityEngine.Object.DestroyImmediate(player);
+            UnityEngine.Object.DestroyImmediate(reader.gameObject);
+            UnityEngine.Object.DestroyImmediate(inputAsset);
+        }
+    }
+
+    [Test]
+    public void ContextQ_StartsDefense()
+    {
+        Keyboard keyboard = InputSystem.AddDevice<Keyboard>();
+        InputActionAsset inputAsset = InputActionAsset.FromJson(ContextFInputJson);
+        GameplayInputReader reader = CreateReader(inputAsset);
+        GameObject player = new GameObject("Context Q Player");
+        player.AddComponent<Rigidbody>();
+        CharacterState state = player.AddComponent<CharacterState>();
+        CharacterMotor motor = player.AddComponent<CharacterMotor>();
+        CharacterLocomotion locomotion = player.AddComponent<CharacterLocomotion>();
+        CombatController combat = player.AddComponent<CombatController>();
+        ContextualPlayerActionRouter router = new ContextualPlayerActionRouter(locomotion, combat, ball: null);
+
+        try
+        {
+            InvokeAwake(state);
+            InvokeAwake(motor);
+            InvokeAwake(locomotion);
+            InvokeAwake(combat);
+            InvokeAwake(player.GetComponent<DefenseController>());
+
+            Press(keyboard.qKey);
+            router.Process(reader, Vector3.forward, Vector3.forward);
+
+            Assert.That(locomotion.Stamina01, Is.EqualTo(0.7f).Within(0.001f));
+            Assert.That(player.GetComponent<DefenseController>().IsDefending, Is.True);
         }
         finally
         {

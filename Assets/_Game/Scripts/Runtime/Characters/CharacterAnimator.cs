@@ -27,12 +27,22 @@ public class CharacterAnimator : MonoBehaviour
     private CharacterLocomotion locomotion;
     private Vector3 lastPosition;
     private float smoothedSpeed;
+    private Transform visualRoot;
+    private Transform hips;
+    private Vector3 visualRootRestLocalPosition;
+    private float hipsRestLocalY;
+    private bool hasGrabPoseReference;
 
     private static readonly int PSpeed = Animator.StringToHash("Speed");
     private static readonly int PShoot = Animator.StringToHash("Shoot");
     private static readonly int PSlide = Animator.StringToHash("Slide");
     private static readonly int PPunch = Animator.StringToHash("Punch");
     private static readonly int PCrossPunch = Animator.StringToHash("CrossPunch");
+    private static readonly int PGrabStart = Animator.StringToHash("GrabStart");
+    private static readonly int PGrabRelease = Animator.StringToHash("GrabRelease");
+    private static readonly int PLeftBlock = Animator.StringToHash("LeftBlock");
+    private static readonly int PRightBlock = Animator.StringToHash("RightBlock");
+    private static readonly int PBackBlock = Animator.StringToHash("BackBlock");
     private static readonly int PStunned = Animator.StringToHash("IsStunned");
 
     private void Awake()
@@ -41,6 +51,8 @@ public class CharacterAnimator : MonoBehaviour
         locomotion = GetComponent<CharacterLocomotion>();
         if (animator == null) animator = GetComponentInChildren<Animator>();
         lastPosition = transform.position;
+        visualRoot = animator != null ? animator.transform : null;
+        hips = FindHips(visualRoot);
     }
 
     private void OnEnable()
@@ -85,8 +97,88 @@ public class CharacterAnimator : MonoBehaviour
         return smoothedSpeed;
     }
 
+    private void LateUpdate()
+    {
+        if (visualRoot == null || hips == null)
+            return;
+
+        if (!IsGrabAnimationActive())
+        {
+            if (hasGrabPoseReference)
+                visualRoot.localPosition = visualRootRestLocalPosition;
+
+            visualRootRestLocalPosition = visualRoot.localPosition;
+            hipsRestLocalY = hips.localPosition.y;
+            hasGrabPoseReference = true;
+            return;
+        }
+
+        if (!hasGrabPoseReference)
+            return;
+
+        float verticalOffset = CalculateGrabVerticalOffset(hipsRestLocalY, hips.localPosition.y);
+        visualRoot.localPosition = visualRootRestLocalPosition + Vector3.up * verticalOffset;
+    }
+
     public void PlayShoot() { if (animator != null) animator.SetTrigger(PShoot); }
     public void PlaySlide() { if (animator != null) animator.SetTrigger(PSlide); }
     public void PlayPunch() { if (animator != null) animator.SetTrigger(PPunch); }
     public void PlayCrossPunch() { if (animator != null) animator.SetTrigger(PCrossPunch); }
+    public void PlayGrabStart() { if (animator != null) animator.SetTrigger(PGrabStart); }
+    public void PlayGrabRelease() { if (animator != null) animator.SetTrigger(PGrabRelease); }
+    public void PlayBlock(DefenseBlockDirection direction)
+    {
+        if (animator == null)
+            return;
+
+        switch (direction)
+        {
+            case DefenseBlockDirection.Left:
+                animator.SetTrigger(PLeftBlock);
+                break;
+            case DefenseBlockDirection.Back:
+                animator.SetTrigger(PBackBlock);
+                break;
+            default:
+                animator.SetTrigger(PRightBlock);
+                break;
+        }
+    }
+
+    public static float CalculateGrabVerticalOffset(float baselineHipLocalY, float currentHipLocalY)
+    {
+        return baselineHipLocalY - currentHipLocalY;
+    }
+
+    private bool IsGrabAnimationActive()
+    {
+        if (animator == null)
+            return false;
+
+        if (IsGrabState(animator.GetCurrentAnimatorStateInfo(0)))
+            return true;
+
+        return animator.IsInTransition(0) && IsGrabState(animator.GetNextAnimatorStateInfo(0));
+    }
+
+    private static bool IsGrabState(AnimatorStateInfo stateInfo)
+    {
+        return stateInfo.IsName("Base Layer.GrabStart")
+            || stateInfo.IsName("Base Layer.GrabHold")
+            || stateInfo.IsName("Base Layer.GrabRelease");
+    }
+
+    private static Transform FindHips(Transform root)
+    {
+        if (root == null)
+            return null;
+
+        foreach (Transform child in root.GetComponentsInChildren<Transform>())
+        {
+            if (child.name.IndexOf("Hips", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return child;
+        }
+
+        return null;
+    }
 }

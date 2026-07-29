@@ -71,18 +71,42 @@ public class CombatConfig : ScriptableObject
         }
     }
 
+    [Serializable]
+    public struct GrabSettings
+    {
+        [Min(0f)] public float range;
+        [Min(0f)] public float radius;
+        [Min(0f)] public float duration;
+        [Min(0f)] public float cancelDelay;
+        [Range(0f, 1f)] public float holderMovementMultiplier;
+        [Min(0f)] public float animationSpeed;
+
+        public GrabSettings(float range, float radius, float duration, float cancelDelay, float holderMovementMultiplier, float animationSpeed)
+        {
+            this.range = range;
+            this.radius = radius;
+            this.duration = duration;
+            this.cancelDelay = cancelDelay;
+            this.holderMovementMultiplier = holderMovementMultiplier;
+            this.animationSpeed = animationSpeed;
+        }
+    }
+
     [Header("Punch")]
     public PunchSettings Punch = new PunchSettings(0f, 0f, 0f, 1.3f, 0.7f, 1.2f, 8f, 1f);
 
     [Header("Action Catalog")]
     public CombatActionDefinition[] Actions =
     {
-        new CombatActionDefinition(CombatActionId.BasicPunch, 1.2f, 1.3f, 0.7f, 8f, 1f, true, 6f, "Punch", 1f),
+        new CombatActionDefinition(CombatActionId.BasicPunch, 1.2f, 1.3f, 0.7f, 4f, 1f, false, 0f, "Punch", 1f),
         new CombatActionDefinition(CombatActionId.CrossPunch, 1.2f, 1.3f, 0.7f, 8f, 1f, true, 6f, "CrossPunch", 2f)
     };
 
     [Header("Tackle")]
     public TackleSettings Tackle = new TackleSettings(0f, 0.35f, 0f, 4.2f, 0.8f, 3f, 8f, 1f, 6f);
+
+    [Header("Grab")]
+    public GrabSettings Grab = new GrabSettings(1.3f, 0.7f, 1.5f, 0.5f, 0.15f, 1.5f);
 
     [Header("Assist")]
     public AssistSettings Assist = new AssistSettings(2f, 30f, 0.18f);

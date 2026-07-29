@@ -15,6 +15,19 @@ using UnityEngine;
 [RequireComponent(typeof(CharacterMotor))]
 public class CombatController : MonoBehaviour
 {
+    private enum CombatHitKind
+    {
+        Standard,
+        Tackle
+    }
+
+    private enum CombatHitResolution
+    {
+        Applied,
+        Blocked,
+        Evaded
+    }
+
     [Header("Config")]
     [SerializeField] private CombatConfig config;
 
@@ -26,6 +39,8 @@ public class CombatController : MonoBehaviour
     private CharacterMotor motor;
     private CharacterLocomotion locomotion;
     private CharacterAnimator anim;
+    private GrabController grab;
+    private DefenseController defense;
     private ThirdPersonActionCamera actionCamera;
     private CombatConfig runtimeConfig;
     private NetworkPlayerAgent netAgent;
@@ -60,7 +75,9 @@ public class CombatController : MonoBehaviour
         }
     }
 
-    public float PunchCooldown => Config.Punch.cooldown;
+    public float PunchCooldown => Config.TryGetAction(CombatActionId.BasicPunch, out CombatActionDefinition basicPunch)
+        ? basicPunch.cooldown
+        : Config.Punch.cooldown;
     public float CrossPunchCooldown => Config.TryGetAction(CombatActionId.CrossPunch, out CombatActionDefinition crossPunch)
         ? crossPunch.cooldown
         : 0f;
@@ -84,6 +101,12 @@ public class CombatController : MonoBehaviour
         locomotion = GetComponent<CharacterLocomotion>();
         anim = GetComponent<CharacterAnimator>();
         netAgent = GetComponent<NetworkPlayerAgent>();
+        grab = GetComponent<GrabController>();
+        if (grab == null)
+            grab = gameObject.AddComponent<GrabController>();
+        defense = GetComponent<DefenseController>();
+        if (defense == null)
+            defense = gameObject.AddComponent<DefenseController>();
 
         if (Camera.main != null)
             actionCamera = Camera.main.GetComponent<ThirdPersonActionCamera>();
@@ -107,12 +130,13 @@ public class CombatController : MonoBehaviour
 
     public void Punch(Vector3 actionDirection)
     {
-        if (state != null && state.IsStunned)
+        if (state != null && (state.IsStunned || state.IsGrabRestricted))
             return;
         if (locomotion != null && locomotion.IsDodging)
             return;
 
-        CombatConfig.PunchSettings punch = Config.Punch;
+        if (!Config.TryGetAction(CombatActionId.BasicPunch, out CombatActionDefinition punch))
+            return;
         if (!actionCooldowns.TryConsume(CombatActionId.BasicPunch, Time.time, punch.cooldown))
         {
             LastPunchRejectedTime = Time.time;
@@ -157,12 +181,12 @@ public class CombatController : MonoBehaviour
         }
 
         if (nearest != null)
-            Hit(nearest, punch.knockbackForce, punch.hitStunTime);
+            Hit(nearest, punch.knockbackForce, punch.hitStunTime, punch.releaseBallOnHit, punch.ballKnockbackForce, CombatHitKind.Standard);
     }
 
     public void CrossPunch(Vector3 actionDirection)
     {
-        if (state != null && state.IsStunned)
+        if (state != null && (state.IsStunned || state.IsGrabRestricted))
             return;
         if (locomotion != null && locomotion.IsDodging)
             return;
@@ -210,7 +234,7 @@ public class CombatController : MonoBehaviour
         }
 
         if (nearest != null)
-            Hit(nearest, crossPunch.knockbackForce, crossPunch.hitStunTime);
+            Hit(nearest, crossPunch.knockbackForce, crossPunch.hitStunTime, crossPunch.releaseBallOnHit, crossPunch.ballKnockbackForce, CombatHitKind.Standard);
     }
 
     public void SlideTackle()
@@ -220,7 +244,7 @@ public class CombatController : MonoBehaviour
 
     public void SlideTackle(Vector3 actionDirection)
     {
-        if (state != null && state.IsStunned)
+        if (state != null && (state.IsStunned || state.IsGrabRestricted))
             return;
         if (locomotion != null && locomotion.IsDodging)
             return;
@@ -302,7 +326,14 @@ public class CombatController : MonoBehaviour
             if (victim != null && victim != state && !hitThisSlide.Contains(victim))
             {
                 CombatConfig.TackleSettings tackle = Config.Tackle;
-                if (Hit(victim, tackle.knockbackForce, tackle.hitStunTime))
+                CombatHitResolution resolution = Hit(
+                    victim,
+                    tackle.knockbackForce,
+                    tackle.hitStunTime,
+                    true,
+                    tackle.ballKnockForce,
+                    CombatHitKind.Tackle);
+                if (resolution != CombatHitResolution.Evaded)
                     hitThisSlide.Add(victim);
             }
         }
@@ -314,7 +345,38 @@ public class CombatController : MonoBehaviour
         lastSlideTime = -999f;
         slideActiveUntil = -999f;
         hitThisSlide.Clear();
+        grab?.Release();
     }
+
+    public bool TryGrab(Vector3 actionDirection)
+    {
+        if (state == null || state.IsStunned || state.IsGrabRestricted || locomotion != null && locomotion.IsDodging)
+            return false;
+
+        return grab != null && grab.TryStart(Config.Grab, actionDirection);
+    }
+
+    public bool TryCancelGrab()
+    {
+        return grab != null && grab.TryCancel();
+    }
+
+    public bool TryEscapeGrab(Vector3 actionDirection)
+    {
+        if (state == null || !state.TryEscapeGrab())
+            return false;
+
+        return locomotion != null && locomotion.TryDodge(actionDirection);
+    }
+
+    public bool TryStartDefense()
+    {
+        return defense != null && defense.TryStartDefense();
+    }
+
+    public bool IsGrabRestricted => state != null && state.IsGrabRestricted;
+    public bool IsHoldingGrab => state != null && state.IsHolding;
+    public bool IsHeldByGrab => state != null && state.IsHeld;
 
     public static Vector3 CorrectActionDirectionTowardTarget(
         Vector3 origin,
@@ -388,12 +450,28 @@ public class CombatController : MonoBehaviour
         return best;
     }
 
-    private bool Hit(CharacterState victim, float knockbackForce, float stunDuration)
+    private CombatHitResolution Hit(
+        CharacterState victim,
+        float knockbackForce,
+        float stunDuration,
+        bool releaseBallOnHit,
+        float ballKnockbackForce,
+        CombatHitKind hitKind)
     {
+        DefenseController defense = victim.GetComponent<DefenseController>();
+        if (defense != null)
+        {
+            bool blocked = hitKind == CombatHitKind.Tackle
+                ? defense.TryBlockTackle(transform.position)
+                : defense.TryBlockAttack(transform.position);
+            if (blocked)
+                return CombatHitResolution.Blocked;
+        }
+
         if (victim.IsInvulnerable)
         {
             victim.NotifyEvaded();
-            return false;
+            return CombatHitResolution.Evaded;
         }
 
         Vector3 dir = victim.transform.position - transform.position;
@@ -415,15 +493,14 @@ public class CombatController : MonoBehaviour
         }
 
         PlayerBallHandler victimBall = victim.GetComponent<PlayerBallHandler>();
-        if (victimBall != null && victimBall.HasBall)
+        if (releaseBallOnHit && victimBall != null && victimBall.HasBall)
         {
-            float ballKnockForce = Config.Tackle.ballKnockForce;
-            Vector3 ballImpulse = dir * ballKnockForce + Vector3.up * (ballKnockForce * 0.3f);
+            Vector3 ballImpulse = dir * ballKnockbackForce + Vector3.up * (ballKnockbackForce * 0.3f);
             victimBall.ForceRelease(ballImpulse);
         }
 
         victim.ApplyHit(dir * knockbackForce, stunDuration);
-        return true;
+        return CombatHitResolution.Applied;
     }
 
     /// <summary>
