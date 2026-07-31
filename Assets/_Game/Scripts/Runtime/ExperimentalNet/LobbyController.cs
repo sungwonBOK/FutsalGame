@@ -60,6 +60,9 @@ public class LobbyController : NetworkBehaviour
     private string hostJoinCode = "";
     private string statusMessage = "";
     private bool isConnecting;
+    private P2pLobbySignalRelay p2pSignalRelay;
+    private P2pConnectionCoordinator p2pConnection;
+    private string p2pStatusMessage = "Waiting for a second player.";
 
     // ---------------- 네트워크 수명주기 ----------------
 
@@ -77,6 +80,7 @@ public class LobbyController : NetworkBehaviour
         }
 
         matchStarted.OnValueChanged += HandleMatchStartedChanged;
+        StartP2pSignaling();
 
         // 경기가 이미 시작된 뒤에 들어온 사람은 값이 바뀌는 순간을 놓친다.
         // 그대로 두면 그 사람 화면에만 오프라인 캐릭터가 남아 경기에 섞인다.
@@ -92,6 +96,89 @@ public class LobbyController : NetworkBehaviour
             NetworkManager.OnClientDisconnectCallback -= HandleClientDisconnect;
 
         matchStarted.OnValueChanged -= HandleMatchStartedChanged;
+        StopP2pSignaling();
+    }
+
+    private void StartP2pSignaling()
+    {
+        p2pSignalRelay = new P2pLobbySignalRelay(NetworkManager);
+        p2pSignalRelay.SignalReceived += HandleP2pSignal;
+        p2pSignalRelay.Start();
+
+        p2pConnection = gameObject.AddComponent<P2pConnectionCoordinator>();
+        p2pConnection.SignalReady += SendP2pSignal;
+        p2pConnection.StateChanged += HandleP2pStateChanged;
+
+        if (IsServer)
+        {
+            NetworkManager.OnClientConnectedCallback += HandleP2pClientConnected;
+            return;
+        }
+
+        p2pConnection.Begin(false);
+        SendP2pReady();
+    }
+
+    private void StopP2pSignaling()
+    {
+        if (IsServer && NetworkManager != null)
+            NetworkManager.OnClientConnectedCallback -= HandleP2pClientConnected;
+
+        if (p2pSignalRelay != null)
+        {
+            p2pSignalRelay.SignalReceived -= HandleP2pSignal;
+            p2pSignalRelay.Stop();
+            p2pSignalRelay = null;
+        }
+
+        if (p2pConnection != null)
+        {
+            p2pConnection.SignalReady -= SendP2pSignal;
+            p2pConnection.StateChanged -= HandleP2pStateChanged;
+            p2pConnection.Shutdown();
+            Destroy(p2pConnection);
+            p2pConnection = null;
+        }
+    }
+
+    private void HandleP2pClientConnected(ulong clientId)
+    {
+        // The client sends Ready only after its signal receiver is registered.
+        p2pStatusMessage = "Waiting for the guest P2P setup to become ready.";
+    }
+
+    private void SendP2pReady()
+    {
+        if (!P2pSignalMessage.TryCreate(P2pSignalKind.Ready, "ready", out P2pSignalMessage ready))
+        {
+            p2pStatusMessage = "Direct P2P setup failed: the ready message was invalid.";
+            return;
+        }
+
+        if (!p2pSignalRelay.TrySend(ready, out string error))
+            p2pStatusMessage = "Direct P2P setup failed: " + error;
+    }
+
+    private void HandleP2pSignal(P2pSignalMessage message)
+    {
+        if (message.Kind == P2pSignalKind.Ready && IsServer)
+        {
+            p2pConnection.Begin(true);
+            return;
+        }
+
+        p2pConnection.ReceiveSignal(message);
+    }
+
+    private void SendP2pSignal(P2pSignalMessage message)
+    {
+        if (!p2pSignalRelay.TrySend(message, out string error))
+            p2pStatusMessage = "Direct P2P setup failed: " + error;
+    }
+
+    private void HandleP2pStateChanged(P2pConnectionState state, string message)
+    {
+        p2pStatusMessage = message;
     }
 
     /// <summary>
@@ -200,6 +287,14 @@ public class LobbyController : NetworkBehaviour
     private void SvStartMatch()
     {
         if (!IsServer) return;
+
+        bool isDirectP2pReady = p2pConnection != null && p2pConnection.IsReady;
+        if (!P2pMatchStartPolicy.CanStart(NetworkManager.ConnectedClientsIds.Count, isDirectP2pReady))
+        {
+            p2pStatusMessage = "Direct P2P is not ready. The 1:1 match will not start through Relay gameplay.";
+            return;
+        }
+
         matchStarted.Value = true;
 
         // 슬롯 구성대로 선수를 네트워크 스폰한 뒤 경기를 연다.
@@ -376,6 +471,8 @@ public class LobbyController : NetworkBehaviour
     {
         GUILayout.Space(8);
         DrawConnectionReport();
+        GUILayout.Label("Direct P2P: " + p2pStatusMessage,
+            new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true });
 
         GUIStyle small = new GUIStyle(GUI.skin.label) { fontSize = 12, wordWrap = true };
         GUILayout.Label("환경: " + RelayConnectionService.EnvironmentName, small);
@@ -506,6 +603,8 @@ public class LobbyController : NetworkBehaviour
 
         // 방에서도 접속/이탈 상황이 보여야 상대가 왜 안 들어오는지 알 수 있다.
         DrawConnectionReport();
+        GUILayout.Label("Direct P2P: " + p2pStatusMessage,
+            new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true });
 
         GUILayout.Space(6);
         GUILayout.BeginHorizontal();

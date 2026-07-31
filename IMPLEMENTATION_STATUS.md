@@ -38,6 +38,16 @@
 - Q spends the same 30 stamina as dodge and opens a `1.50`-second defense window regardless of ball possession. An actual punch, cross punch, tackle, or grab attempt inside the window is blocked and selects Right, Back, or Left Block from the attacker's clockwise angle around the defender. A blocked tackle resolves that target's full slide contact across later physics ticks; an evaded tackle remains eligible for a later overlap check. `DefenseController.TryBlockTackle` currently falls back to the directional block animation and is the extension point for a dedicated tackle-block animation and response. The current implementation is defense-only; the planned no-ball counterattack is not implemented yet.
 - Automated coverage is limited to the pure possession-context timer/suppression rules. Manual Play Mode follow-up remains required for sprint-touch recovery, held/released mouse behavior across recovery, combat rapid-input recovery, and F's possession no-op behavior.
 
+## 2026-07-31 Direct P2P setup foundation
+
+- Added the pre-release `com.unity.webrtc` package and the `Unity.WebRTC` runtime assembly reference.
+- `ExperimentalNet/P2P/` now separates setup-message validation/fragmentation, NGO lobby signaling, and WebRTC peer/DataChannel lifecycle.
+- Existing NGO/Unity Relay remains the room and setup-message path only. SDP and ICE are split into 900-byte named-message fragments before relay.
+- The lobby dynamically prepares one STUN-only direct peer connection for a two-player room and displays connection or failure status. No TURN server and no automatic Relay gameplay fallback were added.
+- `P2pMovementReplicator` now dynamically attaches to each network player. Once the direct channel is ready, local human players send 20 Hz position/yaw snapshots; the one remote human player rejects stale sequences and interpolates its visible movement. Its `ClientNetworkTransform` is disabled during that P2P path so NGO does not compete for the transform.
+- Ball, combat, match state, AI, and action/result traffic still use their existing NGO paths. A two-player room cannot start the match unless the direct P2P channel is ready, so P2P failure does not silently fall back to Relay movement.
+- Verified in Unity EditMode: full suite 102/102 passed. Two-client Relay/direct-connect and Play Mode checks remain manual gates.
+
 ## 2026-07-24 Update
 
 - `CharacterLocomotion` owns stamina, sprint drain/regeneration, dodge timing, and dodge availability; `CharacterMotor` remains responsible for applying the resolved movement and dash velocity.
