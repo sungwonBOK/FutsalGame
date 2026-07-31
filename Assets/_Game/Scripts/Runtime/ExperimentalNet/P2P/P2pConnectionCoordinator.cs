@@ -28,6 +28,9 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
     private bool isOfferer;
     private bool hasRemoteDescription;
     private int connectionGeneration;
+    private int generatedCandidateCount;
+    private int receivedCandidateCount;
+    private int appliedCandidateCount;
 
     public static P2pConnectionCoordinator Current { get; private set; }
     public P2pConnectionState State { get; private set; } = P2pConnectionState.Idle;
@@ -50,7 +53,11 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
         isOfferer = shouldCreateOffer;
         hasRemoteDescription = false;
         pendingCandidates.Clear();
+        generatedCandidateCount = 0;
+        receivedCandidateCount = 0;
+        appliedCandidateCount = 0;
         SetState(P2pConnectionState.Negotiating, "Direct P2P connection is being prepared.");
+        Debug.Log(P2pDiagnosticFormatter.ConnectionPrepared(isOfferer, connectionGeneration), this);
 
         RTCConfiguration configuration = new RTCConfiguration
         {
@@ -78,6 +85,8 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
 
     public void ReceiveSignal(P2pSignalMessage message)
     {
+        Debug.Log(P2pDiagnosticFormatter.Signal(isOfferer, "received", message.Kind, message.Payload.Length), this);
+
         if (peerConnection == null)
         {
             Fail("P2P setup was received before the local connection was prepared.");
@@ -201,6 +210,9 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
 
     private void SendIceCandidate(RTCIceCandidate candidate)
     {
+        generatedCandidateCount++;
+        Debug.Log(P2pDiagnosticFormatter.Candidate(isOfferer, "generated", generatedCandidateCount, pendingCandidates.Count), this);
+
         IceCandidatePayload payload = new IceCandidatePayload
         {
             candidate = candidate.Candidate,
@@ -228,9 +240,12 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
             sdpMLineIndex = payload.hasSdpMLineIndex ? payload.sdpMLineIndex : (int?)null
         };
 
+        receivedCandidateCount++;
+
         if (!hasRemoteDescription)
         {
             pendingCandidates.Add(candidate);
+            Debug.Log(P2pDiagnosticFormatter.Candidate(isOfferer, "queued", receivedCandidateCount, pendingCandidates.Count), this);
             return;
         }
 
@@ -249,15 +264,26 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
     {
         using RTCIceCandidate candidate = new RTCIceCandidate(candidateInit);
         if (!peerConnection.AddIceCandidate(candidate))
+        {
             Fail("The remote P2P candidate could not be applied.");
+            return;
+        }
+
+        appliedCandidateCount++;
+        Debug.Log(P2pDiagnosticFormatter.Candidate(isOfferer, "applied", appliedCandidateCount, pendingCandidates.Count), this);
     }
 
     private void AttachSnapshotChannel(RTCDataChannel channel)
     {
         snapshotChannel = channel;
-        snapshotChannel.OnOpen = () => SetState(P2pConnectionState.Ready, "Direct P2P connection is ready.");
+        snapshotChannel.OnOpen = () =>
+        {
+            Debug.Log(P2pDiagnosticFormatter.DataChannel(isOfferer, "opened"), this);
+            SetState(P2pConnectionState.Ready, "Direct P2P connection is ready.");
+        };
         snapshotChannel.OnClose = () =>
         {
+            Debug.Log(P2pDiagnosticFormatter.DataChannel(isOfferer, "closed"), this);
             if (State == P2pConnectionState.Ready)
                 Fail("The direct P2P data channel closed.");
         };
@@ -269,12 +295,22 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
 
     private void HandleIceConnectionState(RTCIceConnectionState iceConnectionState)
     {
+        Debug.Log(P2pDiagnosticFormatter.IceState(
+            isOfferer,
+            iceConnectionState.ToString(),
+            generatedCandidateCount,
+            receivedCandidateCount,
+            appliedCandidateCount,
+            pendingCandidates.Count), this);
+
         if (iceConnectionState == RTCIceConnectionState.Failed)
             Fail("Direct P2P connectivity could not be established.");
     }
 
     private void HandlePeerConnectionState(RTCPeerConnectionState peerState)
     {
+        Debug.Log(P2pDiagnosticFormatter.PeerState(isOfferer, peerState.ToString()), this);
+
         if (peerState == RTCPeerConnectionState.Failed)
             Fail("The direct P2P connection failed.");
     }
@@ -287,6 +323,7 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
             return;
         }
 
+        Debug.Log(P2pDiagnosticFormatter.Signal(isOfferer, "sent", kind, payload.Length), this);
         SignalReady?.Invoke(message);
     }
 

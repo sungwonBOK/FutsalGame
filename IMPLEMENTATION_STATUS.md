@@ -44,6 +44,7 @@
 - `ExperimentalNet/P2P/` now separates setup-message validation/fragmentation, NGO lobby signaling, and WebRTC peer/DataChannel lifecycle.
 - Existing NGO/Unity Relay remains the room and setup-message path only. SDP and ICE are split into 900-byte named-message fragments before relay.
 - The lobby dynamically prepares one STUN-only direct peer connection for a two-player room and displays connection or failure status. No TURN server and no automatic Relay gameplay fallback were added.
+- Direct P2P diagnostics log only role, signal kind/length, candidate counts, and ICE/DataChannel state transitions. SDP, candidate contents, and IP addresses are not logged.
 - A participant can now select an available BLUE or RED slot themselves. The server accepts only the requesting client's ID, moves that client atomically from any prior team slot, and leaves the current assignment untouched when the requested team is full.
 - `P2pMovementReplicator` now dynamically attaches to each network player. Once the direct channel is ready, local human players send 20 Hz position/yaw snapshots; the one remote human player rejects stale sequences and interpolates its visible movement. Its `ClientNetworkTransform` is disabled during that P2P path so NGO does not compete for the transform.
 - Ball, combat, match state, AI, and action/result traffic still use their existing NGO paths. A two-player room cannot start the match unless the direct P2P channel is ready, so P2P failure does not silently fall back to Relay movement.
