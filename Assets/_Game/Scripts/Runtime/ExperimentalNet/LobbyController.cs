@@ -259,6 +259,19 @@ public class LobbyController : NetworkBehaviour
         SvSet(index, Occupant.Human, next);
     }
 
+    [Rpc(SendTo.Server)]
+    private void RequestJoinTeamRpc(byte team, RpcParams rpcParams = default)
+    {
+        if (!IsServer || matchStarted.Value || team > 1) return;
+
+        int targetSlotIndex = LobbyTeamJoinPolicy.FindFirstEmptySlot(SnapshotSlots(), team);
+        if (targetSlotIndex < 0) return;
+
+        ulong joiningClientId = rpcParams.Receive.SenderClientId;
+        VacateHuman(joiningClientId);
+        SvSet(targetSlotIndex, Occupant.Human, joiningClientId);
+    }
+
     /// <summary>접속자 목록을 항상 같은 순서로 돌기 위해 정렬해서 돌려준다.</summary>
     private List<ulong> SortedConnectedClients()
     {
@@ -654,7 +667,39 @@ public class LobbyController : NetworkBehaviour
                 SvAddSlot(team);
         }
 
+        if (!IsServer)
+            DrawClientTeamJoinButton(team, title);
+
         GUILayout.EndVertical();
+    }
+
+    private void DrawClientTeamJoinButton(byte team, string title)
+    {
+        if (IsLocalClientAssignedToTeam(team))
+        {
+            GUILayout.Label(title + " 참가 중");
+            return;
+        }
+
+        bool hasEmptySlot = LobbyTeamJoinPolicy.FindFirstEmptySlot(SnapshotSlots(), team) >= 0;
+        bool wasEnabled = GUI.enabled;
+        GUI.enabled = wasEnabled && hasEmptySlot;
+        if (GUILayout.Button(hasEmptySlot ? title + " 참가" : title + " 팀 가득"))
+            RequestJoinTeamRpc(team);
+        GUI.enabled = wasEnabled;
+    }
+
+    private bool IsLocalClientAssignedToTeam(byte team)
+    {
+        ulong localClientId = NetworkManager.LocalClientId;
+        for (int i = 0; i < slots.Count; i++)
+        {
+            TeamSlot slot = slots[i];
+            if (slot.team == team && slot.type == Occupant.Human && slot.clientId == localClientId)
+                return true;
+        }
+
+        return false;
     }
 
     private string SlotLabel(TeamSlot s)
