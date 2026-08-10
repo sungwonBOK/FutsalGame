@@ -110,6 +110,7 @@ public class GameplayInputReaderTests
         AssertCompositeBinding(asset, "QueueOneTouchShot", "<Keyboard>/leftAlt", "<Mouse>/rightButton");
         AssertCompositeBinding(asset, "QueueOneTouchShot", "<Keyboard>/rightAlt", "<Mouse>/rightButton");
         AssertActionBindings(asset, "CancelAction", "<Keyboard>/c");
+        AssertActionBindings(asset, "PowerActivation", "<Keyboard>/r");
         AssertActionBindings(asset, "ContextQ", "<Keyboard>/q");
         AssertActionBindings(asset, "Grab", "<Keyboard>/e");
         AssertActionBindings(asset, "ContextF", "<Keyboard>/f");
@@ -119,7 +120,7 @@ public class GameplayInputReaderTests
         Assert.That(AllBindingPaths(asset), Does.Not.Contain("<Keyboard>/k"));
         Assert.That(AllBindingPaths(asset), Does.Not.Contain("<Keyboard>/l"));
         AssertActionBindings(asset, "Pause", "<Keyboard>/escape");
-        AssertActionBindings(asset, "Restart", "<Keyboard>/r", "<Keyboard>/space");
+        Assert.That(FindAction(asset, "Restart"), Is.Null);
         AssertActionBindings(asset, "ToggleLegacyCamera", "<Keyboard>/f5");
     }
 

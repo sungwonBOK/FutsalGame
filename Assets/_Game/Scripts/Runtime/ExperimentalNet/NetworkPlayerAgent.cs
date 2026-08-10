@@ -82,6 +82,10 @@ public class NetworkPlayerAgent : NetworkBehaviour
         characterState = GetComponent<CharacterState>();
         if (GetComponent<P2pMovementReplicator>() == null)
             gameObject.AddComponent<P2pMovementReplicator>();
+        if (GetComponent<P2pPresentationDispatcher>() == null)
+            gameObject.AddComponent<P2pPresentationDispatcher>();
+        if (GetComponent<P2pCombatReplicator>() == null)
+            gameObject.AddComponent<P2pCombatReplicator>();
 
         // 정체가 정해지기 전에 잘못 움직이지 않도록 둘 다 꺼두고 시작한다.
         if (playerInput != null) playerInput.enabled = false;

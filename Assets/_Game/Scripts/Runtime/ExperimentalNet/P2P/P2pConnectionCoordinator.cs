@@ -19,12 +19,20 @@ public enum P2pConnectionState
 public sealed class P2pConnectionCoordinator : MonoBehaviour
 {
     private const string SnapshotChannelLabel = "futsal-snapshots";
+    private const string CombatChannelLabel = "futsal-combat";
+    private const string BallStateChannelLabel = "futsal-ball-state";
+    private const string BallEventChannelLabel = "futsal-ball-events";
+    private static readonly P2pGameplayReadiness gameplayReadiness = new P2pGameplayReadiness(
+        P2pGameplayChannel.Snapshot | P2pGameplayChannel.Combat | P2pGameplayChannel.Ball);
     private const string StunServerUrl = "stun:stun.l.google.com:19302";
 
     private readonly List<RTCIceCandidateInit> pendingCandidates = new List<RTCIceCandidateInit>();
 
     private RTCPeerConnection peerConnection;
     private RTCDataChannel snapshotChannel;
+    private RTCDataChannel combatChannel;
+    private RTCDataChannel ballStateChannel;
+    private RTCDataChannel ballEventChannel;
     private bool isOfferer;
     private bool hasRemoteDescription;
     private int connectionGeneration;
@@ -35,10 +43,33 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
     public static P2pConnectionCoordinator Current { get; private set; }
     public P2pConnectionState State { get; private set; } = P2pConnectionState.Idle;
     public bool IsReady => State == P2pConnectionState.Ready;
+    public bool IsCombatReady => IsReady && combatChannel != null && combatChannel.ReadyState == RTCDataChannelState.Open;
+    public bool IsBallReady => IsReady
+        && ballStateChannel != null && ballStateChannel.ReadyState == RTCDataChannelState.Open
+        && ballEventChannel != null && ballEventChannel.ReadyState == RTCDataChannelState.Open;
+    public P2pGameplayChannel OpenGameplayChannels
+    {
+        get
+        {
+            P2pGameplayChannel channels = P2pGameplayChannel.None;
+            if (IsReady && snapshotChannel != null && snapshotChannel.ReadyState == RTCDataChannelState.Open)
+                channels |= P2pGameplayChannel.Snapshot;
+            if (IsCombatReady)
+                channels |= P2pGameplayChannel.Combat;
+            if (IsBallReady)
+                channels |= P2pGameplayChannel.Ball;
+            return channels;
+        }
+    }
+    public bool IsGameplayReady => gameplayReadiness.IsReady(OpenGameplayChannels);
 
     public event Action<P2pSignalMessage> SignalReady;
     public event Action<P2pConnectionState, string> StateChanged;
+    public event Action<P2pGameplayChannel> GameplayChannelsChanged;
     public event Action<byte[]> SnapshotReceived;
+    public event Action<byte[]> CombatReceived;
+    public event Action<byte[]> BallStateReceived;
+    public event Action<byte[]> BallEventReceived;
 
     private void Awake()
     {
@@ -71,7 +102,7 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
         peerConnection.OnIceCandidate = SendIceCandidate;
         peerConnection.OnIceConnectionChange = HandleIceConnectionState;
         peerConnection.OnConnectionStateChange = HandlePeerConnectionState;
-        peerConnection.OnDataChannel = AttachSnapshotChannel;
+        peerConnection.OnDataChannel = AttachDataChannel;
 
         if (!isOfferer)
             return;
@@ -80,6 +111,18 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
             SnapshotChannelLabel,
             new RTCDataChannelInit { ordered = false, maxRetransmits = 0 });
         AttachSnapshotChannel(snapshotChannel);
+        combatChannel = peerConnection.CreateDataChannel(
+            CombatChannelLabel,
+            new RTCDataChannelInit { ordered = true });
+        AttachCombatChannel(combatChannel);
+        ballStateChannel = peerConnection.CreateDataChannel(
+            BallStateChannelLabel,
+            new RTCDataChannelInit { ordered = false, maxRetransmits = 0 });
+        AttachBallStateChannel(ballStateChannel);
+        ballEventChannel = peerConnection.CreateDataChannel(
+            BallEventChannelLabel,
+            new RTCDataChannelInit { ordered = true });
+        AttachBallEventChannel(ballEventChannel);
         StartCoroutine(CreateAndSendOffer(connectionGeneration));
     }
 
@@ -124,6 +167,33 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
             return false;
 
         snapshotChannel.Send(payload);
+        return true;
+    }
+
+    public bool TrySendCombat(byte[] payload)
+    {
+        if (!IsCombatReady)
+            return false;
+
+        combatChannel.Send(payload);
+        return true;
+    }
+
+    public bool TrySendBallState(byte[] payload)
+    {
+        if (!IsBallReady)
+            return false;
+
+        ballStateChannel.Send(payload);
+        return true;
+    }
+
+    public bool TrySendBallEvent(byte[] payload)
+    {
+        if (!IsBallReady)
+            return false;
+
+        ballEventChannel.Send(payload);
         return true;
     }
 
@@ -273,6 +343,18 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
         Debug.Log(P2pDiagnosticFormatter.Candidate(isOfferer, "applied", appliedCandidateCount, pendingCandidates.Count), this);
     }
 
+    private void AttachDataChannel(RTCDataChannel channel)
+    {
+        if (channel.Label == CombatChannelLabel)
+            AttachCombatChannel(channel);
+        else if (channel.Label == BallStateChannelLabel)
+            AttachBallStateChannel(channel);
+        else if (channel.Label == BallEventChannelLabel)
+            AttachBallEventChannel(channel);
+        else
+            AttachSnapshotChannel(channel);
+    }
+
     private void AttachSnapshotChannel(RTCDataChannel channel)
     {
         snapshotChannel = channel;
@@ -280,6 +362,7 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
         {
             Debug.Log(P2pDiagnosticFormatter.DataChannel(isOfferer, "opened"), this);
             SetState(P2pConnectionState.Ready, "Direct P2P connection is ready.");
+            NotifyGameplayChannelsChanged();
         };
         snapshotChannel.OnClose = () =>
         {
@@ -290,7 +373,10 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
         snapshotChannel.OnMessage = payload => SnapshotReceived?.Invoke(payload);
 
         if (snapshotChannel.ReadyState == RTCDataChannelState.Open)
+        {
             SetState(P2pConnectionState.Ready, "Direct P2P connection is ready.");
+            NotifyGameplayChannelsChanged();
+        }
     }
 
     private void HandleIceConnectionState(RTCIceConnectionState iceConnectionState)
@@ -305,6 +391,45 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
 
         if (iceConnectionState == RTCIceConnectionState.Failed)
             Fail("Direct P2P connectivity could not be established.");
+    }
+
+    private void AttachCombatChannel(RTCDataChannel channel)
+    {
+        combatChannel = channel;
+        combatChannel.OnOpen = NotifyGameplayChannelsChanged;
+        combatChannel.OnClose = () =>
+        {
+            if (State == P2pConnectionState.Ready)
+                Fail("The direct P2P combat channel closed.");
+        };
+        combatChannel.OnMessage = payload => CombatReceived?.Invoke(payload);
+        NotifyGameplayChannelsChanged();
+    }
+
+    private void AttachBallStateChannel(RTCDataChannel channel)
+    {
+        ballStateChannel = channel;
+        ballStateChannel.OnOpen = NotifyGameplayChannelsChanged;
+        ballStateChannel.OnClose = () =>
+        {
+            if (State == P2pConnectionState.Ready)
+                Fail("The direct P2P ball state channel closed.");
+        };
+        ballStateChannel.OnMessage = payload => BallStateReceived?.Invoke(payload);
+        NotifyGameplayChannelsChanged();
+    }
+
+    private void AttachBallEventChannel(RTCDataChannel channel)
+    {
+        ballEventChannel = channel;
+        ballEventChannel.OnOpen = NotifyGameplayChannelsChanged;
+        ballEventChannel.OnClose = () =>
+        {
+            if (State == P2pConnectionState.Ready)
+                Fail("The direct P2P ball event channel closed.");
+        };
+        ballEventChannel.OnMessage = payload => BallEventReceived?.Invoke(payload);
+        NotifyGameplayChannelsChanged();
     }
 
     private void HandlePeerConnectionState(RTCPeerConnectionState peerState)
@@ -355,6 +480,33 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
             snapshotChannel = null;
         }
 
+        if (combatChannel != null)
+        {
+            combatChannel.OnOpen = null;
+            combatChannel.OnClose = null;
+            combatChannel.OnMessage = null;
+            combatChannel.Dispose();
+            combatChannel = null;
+        }
+
+        if (ballStateChannel != null)
+        {
+            ballStateChannel.OnOpen = null;
+            ballStateChannel.OnClose = null;
+            ballStateChannel.OnMessage = null;
+            ballStateChannel.Dispose();
+            ballStateChannel = null;
+        }
+
+        if (ballEventChannel != null)
+        {
+            ballEventChannel.OnOpen = null;
+            ballEventChannel.OnClose = null;
+            ballEventChannel.OnMessage = null;
+            ballEventChannel.Dispose();
+            ballEventChannel = null;
+        }
+
         if (peerConnection != null)
         {
             peerConnection.OnIceCandidate = null;
@@ -373,6 +525,11 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
     {
         State = newState;
         StateChanged?.Invoke(newState, message);
+    }
+
+    private void NotifyGameplayChannelsChanged()
+    {
+        GameplayChannelsChanged?.Invoke(OpenGameplayChannels);
     }
 
     private void OnDestroy()

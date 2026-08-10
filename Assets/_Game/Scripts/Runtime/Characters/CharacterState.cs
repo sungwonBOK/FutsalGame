@@ -17,6 +17,7 @@ public class CharacterState : MonoBehaviour
     private NetworkPlayerAgent netAgent;
     private float stunUntil = -999f;
     private float invulnerableUntil = -999f;
+    private bool usesDirectP2pStun;
     private readonly GrabControlState grabControl = new GrabControlState();
     private GrabController activeGrab;
 
@@ -41,11 +42,11 @@ public class CharacterState : MonoBehaviour
     private void Update()
     {
         // 기절이 풀리는 시점도 서버가 정한다. 클라는 복제받은 값을 따른다.
-        if (!HasStateAuthority)
-            return;
-
-        if (IsStunned && Time.time >= stunUntil)
+        if (IsStunned && Time.time >= stunUntil && (HasStateAuthority || usesDirectP2pStun))
+        {
             IsStunned = false;
+            usesDirectP2pStun = false;
+        }
     }
 
     /// <summary>
@@ -55,6 +56,7 @@ public class CharacterState : MonoBehaviour
     public void ApplyHit(Vector3 knockbackImpulse, float stunDuration)
     {
         IsStunned = true;
+        usesDirectP2pStun = false;
         stunUntil = Mathf.Max(stunUntil, Time.time + stunDuration);
 
         // 온라인에서는 이동 권한이 소유자에게 있어 서버가 직접 밀어도 곧 덮어써진다.
@@ -62,6 +64,15 @@ public class CharacterState : MonoBehaviour
             netAgent.ServerApplyKnockback(knockbackImpulse);
         else
             rb.AddForce(knockbackImpulse, ForceMode.Impulse);
+    }
+
+    /// <summary>Applies a defender-owned direct-P2P hit without routing it through the NGO host.</summary>
+    public void ApplyDirectP2pHit(Vector3 knockbackImpulse, float stunDuration)
+    {
+        IsStunned = true;
+        usesDirectP2pStun = true;
+        stunUntil = Mathf.Max(stunUntil, Time.time + stunDuration);
+        ApplyKnockbackImpulse(knockbackImpulse);
     }
 
     public void SetInvulnerable(float duration)
@@ -95,6 +106,7 @@ public class CharacterState : MonoBehaviour
     public void NotifyEvaded()
     {
         LastEvadeTime = Time.time;
+        GetComponent<PowerGauge>()?.TryAdd(PowerGaugeGainSource.Evade);
     }
 
     public bool CanUseGrabAction(GameplayInputAction action, float now)
@@ -131,6 +143,7 @@ public class CharacterState : MonoBehaviour
     public void ResetState()
     {
         IsStunned = false;
+        usesDirectP2pStun = false;
         stunUntil = -999f;
         invulnerableUntil = -999f;
         ClearGrabState();

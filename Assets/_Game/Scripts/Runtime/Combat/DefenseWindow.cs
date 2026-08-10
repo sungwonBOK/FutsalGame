@@ -39,7 +39,7 @@ public sealed class DefenseWindow
         return true;
     }
 
-    private static DefenseBlockDirection ResolveDirection(
+    public static DefenseBlockDirection ResolveDirection(
         Vector3 defenderPosition,
         Vector3 defenderForward,
         Vector3 attackerPosition)

@@ -44,6 +44,7 @@ public class CharacterAnimator : MonoBehaviour
     private static readonly int PRightBlock = Animator.StringToHash("RightBlock");
     private static readonly int PBackBlock = Animator.StringToHash("BackBlock");
     private static readonly int PStunned = Animator.StringToHash("IsStunned");
+    private static readonly int PIdle = Animator.StringToHash("Base Layer.Idle");
 
     private void Awake()
     {
@@ -145,6 +146,40 @@ public class CharacterAnimator : MonoBehaviour
         }
     }
 
+    public void PlayP2pPresentation(P2pPresentationAction action, float clipStartOffset, DefenseBlockDirection blockDirection)
+    {
+        if (animator == null)
+            return;
+
+        if (clipStartOffset <= 0f || !TryGetStateHash(action, blockDirection, out int stateHash))
+        {
+            PlayP2pTrigger(action, blockDirection);
+            return;
+        }
+
+        AnimationClip clip = FindClip(action, blockDirection);
+        if (clip == null || clip.length <= 0f)
+        {
+            PlayP2pTrigger(action, blockDirection);
+            return;
+        }
+
+        animator.Play(stateHash, 0, Mathf.Clamp01(clipStartOffset / clip.length));
+    }
+
+    public void CancelP2pPresentation(P2pPresentationCancelStyle cancelStyle)
+    {
+        if (animator == null)
+            return;
+
+        animator.ResetTrigger(PShoot);
+        animator.ResetTrigger(PSlide);
+        animator.ResetTrigger(PPunch);
+        animator.ResetTrigger(PCrossPunch);
+        animator.ResetTrigger(PGrabStart);
+        animator.CrossFade(PIdle, cancelStyle == P2pPresentationCancelStyle.Immediate ? 0f : 0.08f);
+    }
+
     public static float CalculateGrabVerticalOffset(float baselineHipLocalY, float currentHipLocalY)
     {
         return baselineHipLocalY - currentHipLocalY;
@@ -177,6 +212,69 @@ public class CharacterAnimator : MonoBehaviour
         {
             if (child.name.IndexOf("Hips", System.StringComparison.OrdinalIgnoreCase) >= 0)
                 return child;
+        }
+
+        return null;
+    }
+
+    private void PlayP2pTrigger(P2pPresentationAction action, DefenseBlockDirection blockDirection)
+    {
+        switch (action)
+        {
+            case P2pPresentationAction.Punch: PlayPunch(); break;
+            case P2pPresentationAction.CrossPunch: PlayCrossPunch(); break;
+            case P2pPresentationAction.Tackle: PlaySlide(); break;
+            case P2pPresentationAction.Grab: PlayGrabStart(); break;
+            case P2pPresentationAction.Block: PlayBlock(blockDirection); break;
+            case P2pPresentationAction.Pass:
+            case P2pPresentationAction.Shot:
+                PlayShoot();
+                break;
+        }
+    }
+
+    private static bool TryGetStateHash(P2pPresentationAction action, DefenseBlockDirection blockDirection, out int stateHash)
+    {
+        string stateName;
+        switch (action)
+        {
+            case P2pPresentationAction.Punch: stateName = "Punch"; break;
+            case P2pPresentationAction.CrossPunch: stateName = "CrossPunch"; break;
+            case P2pPresentationAction.Tackle: stateName = "Slide"; break;
+            case P2pPresentationAction.Grab: stateName = "GrabStart"; break;
+            case P2pPresentationAction.Block:
+                stateName = blockDirection == DefenseBlockDirection.Left
+                    ? "LeftBlock"
+                    : blockDirection == DefenseBlockDirection.Back ? "BackBlock" : "RightBlock";
+                break;
+            case P2pPresentationAction.Pass:
+            case P2pPresentationAction.Shot:
+                stateName = "Shoot";
+                break;
+            default:
+                stateHash = 0;
+                return false;
+        }
+
+        stateHash = Animator.StringToHash("Base Layer." + stateName);
+        return true;
+    }
+
+    private AnimationClip FindClip(P2pPresentationAction action, DefenseBlockDirection blockDirection)
+    {
+        if (animator.runtimeAnimatorController == null || !TryGetStateHash(action, blockDirection, out _))
+            return null;
+
+        string clipName = action == P2pPresentationAction.Tackle ? "Slide" : action.ToString();
+        if (action == P2pPresentationAction.Block)
+            clipName = blockDirection == DefenseBlockDirection.Left ? "LeftBlock" : blockDirection == DefenseBlockDirection.Back ? "BackBlock" : "RightBlock";
+        if (action == P2pPresentationAction.Pass || action == P2pPresentationAction.Shot)
+            clipName = "Shoot";
+
+        foreach (AnimationClip clip in animator.runtimeAnimatorController.animationClips)
+        {
+            if (clip != null && clip.name == clipName)
+                return clip;
         }
 
         return null;

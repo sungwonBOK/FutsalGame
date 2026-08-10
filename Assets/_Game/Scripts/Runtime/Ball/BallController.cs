@@ -73,6 +73,24 @@ public class BallController : MonoBehaviour
 
     public bool TryAcquire(PlayerBallHandler owner)
     {
+        bool p2pAcquireResult;
+        if (BallAuthorityController.TryHandleAcquire(this, owner, out p2pAcquireResult))
+            return p2pAcquireResult;
+
+        return TryAcquireWithLocalAuthority(owner);
+    }
+
+    /// <summary>Used only by the current BallAuthority after it has validated a P2P acquire request.</summary>
+    public bool TryAcquireFromP2pAuthority(PlayerBallHandler owner)
+    {
+        if (BallAuthorityController.Current == null || !BallAuthorityController.Current.IsLocalAuthority)
+            return false;
+
+        return TryAcquireWithLocalAuthority(owner);
+    }
+
+    private bool TryAcquireWithLocalAuthority(PlayerBallHandler owner)
+    {
         if (!NetworkBall.LocalHasAuthority)
             return false;
         if (owner == null)
@@ -134,6 +152,46 @@ public class BallController : MonoBehaviour
 
         SetOwner(null);
         RestoreFreeBallPhysics(Vector3.zero);
+    }
+
+    /// <summary>Reverts a just-applied P2P acquisition if its reliable authority transfer cannot be sent.</summary>
+    public void ClearOwnerFromP2pAuthority()
+    {
+        if (BallAuthorityController.Current == null || !BallAuthorityController.Current.IsLocalAuthority)
+            return;
+        if (CurrentOwner == null)
+            return;
+
+        SetOwner(null);
+        RestoreFreeBallPhysics(Vector3.zero);
+    }
+
+    /// <summary>
+    /// Applies a direct-P2P authority anchor or latest state without writing NGO NetworkVariables.
+    /// Non-authorities keep the rigidbody kinematic so only the BallAuthority resolves physics.
+    /// </summary>
+    public void ApplyP2pState(
+        PlayerBallHandler owner,
+        Vector3 position,
+        Quaternion rotation,
+        Vector3 velocity,
+        Vector3 angularVelocity,
+        bool localAuthority)
+    {
+        CurrentOwner = owner;
+        transform.SetPositionAndRotation(position, rotation);
+
+        if (ballCollider != null)
+            ballCollider.enabled = owner == null;
+
+        if (body == null)
+            return;
+
+        body.position = position;
+        body.rotation = rotation;
+        body.isKinematic = !localAuthority || owner != null;
+        body.linearVelocity = owner == null && localAuthority ? velocity : Vector3.zero;
+        body.angularVelocity = owner == null && localAuthority ? angularVelocity : Vector3.zero;
     }
 
     public static void ClearActiveOwner()

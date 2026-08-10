@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Unity.Netcode;
@@ -63,6 +64,9 @@ public class LobbyController : NetworkBehaviour
     private P2pLobbySignalRelay p2pSignalRelay;
     private P2pConnectionCoordinator p2pConnection;
     private string p2pStatusMessage = "Waiting for a second player.";
+    private readonly P2pReconnectSchedule p2pReconnectSchedule = new P2pReconnectSchedule();
+    private P2pSessionStatus p2pSessionStatus = P2pSessionStatus.Preparing;
+    private Coroutine p2pReconnectRoutine;
 
     // ---------------- 네트워크 수명주기 ----------------
 
@@ -108,6 +112,7 @@ public class LobbyController : NetworkBehaviour
         p2pConnection = gameObject.AddComponent<P2pConnectionCoordinator>();
         p2pConnection.SignalReady += SendP2pSignal;
         p2pConnection.StateChanged += HandleP2pStateChanged;
+        p2pConnection.GameplayChannelsChanged += HandleP2pGameplayChannelsChanged;
 
         if (IsServer)
         {
@@ -121,6 +126,12 @@ public class LobbyController : NetworkBehaviour
 
     private void StopP2pSignaling()
     {
+        if (p2pReconnectRoutine != null)
+        {
+            StopCoroutine(p2pReconnectRoutine);
+            p2pReconnectRoutine = null;
+        }
+
         if (IsServer && NetworkManager != null)
             NetworkManager.OnClientConnectedCallback -= HandleP2pClientConnected;
 
@@ -135,6 +146,7 @@ public class LobbyController : NetworkBehaviour
         {
             p2pConnection.SignalReady -= SendP2pSignal;
             p2pConnection.StateChanged -= HandleP2pStateChanged;
+            p2pConnection.GameplayChannelsChanged -= HandleP2pGameplayChannelsChanged;
             p2pConnection.Shutdown();
             Destroy(p2pConnection);
             p2pConnection = null;
@@ -178,7 +190,84 @@ public class LobbyController : NetworkBehaviour
 
     private void HandleP2pStateChanged(P2pConnectionState state, string message)
     {
+        if (state == P2pConnectionState.Ready)
+        {
+            UpdateP2pSessionStatus();
+            return;
+        }
+
+        if (state == P2pConnectionState.Failed)
+        {
+            SetP2pSessionStatus(P2pSessionStatus.PeerDisconnected);
+            BeginGuestReconnect();
+            return;
+        }
+
+        if (state == P2pConnectionState.Negotiating)
+        {
+            SetP2pSessionStatus(P2pSessionStatus.Preparing);
+            return;
+        }
+
         p2pStatusMessage = message;
+    }
+
+    private void HandleP2pGameplayChannelsChanged(P2pGameplayChannel channels)
+    {
+        UpdateP2pSessionStatus();
+    }
+
+    private void UpdateP2pSessionStatus()
+    {
+        if (p2pConnection != null && p2pConnection.IsGameplayReady)
+        {
+            p2pReconnectSchedule.Reset();
+            SetP2pSessionStatus(P2pSessionStatus.Ready);
+            return;
+        }
+
+        SetP2pSessionStatus(P2pSessionStatus.Preparing);
+    }
+
+    private void SetP2pSessionStatus(P2pSessionStatus status)
+    {
+        p2pSessionStatus = status;
+        p2pStatusMessage = P2pSessionStatusText.For(status);
+    }
+
+    private void BeginGuestReconnect()
+    {
+        if (IsServer || p2pReconnectRoutine != null)
+            return;
+
+        if (NetworkManager == null || !NetworkManager.IsListening)
+        {
+            SetP2pSessionStatus(P2pSessionStatus.HostUnavailable);
+            return;
+        }
+
+        p2pReconnectRoutine = StartCoroutine(ReconnectGuestP2p());
+    }
+
+    private IEnumerator ReconnectGuestP2p()
+    {
+        while (p2pConnection != null && !p2pConnection.IsGameplayReady)
+        {
+            SetP2pSessionStatus(P2pSessionStatus.Reconnecting);
+            yield return new WaitForSeconds(p2pReconnectSchedule.NextDelaySeconds());
+
+            if (NetworkManager == null || !NetworkManager.IsListening)
+            {
+                SetP2pSessionStatus(P2pSessionStatus.HostUnavailable);
+                break;
+            }
+
+            p2pReconnectSchedule.RecordAttempt();
+            p2pConnection.Begin(false);
+            SendP2pReady();
+        }
+
+        p2pReconnectRoutine = null;
     }
 
     /// <summary>
@@ -202,6 +291,9 @@ public class LobbyController : NetworkBehaviour
     private void HandleClientDisconnect(ulong clientId)
     {
         if (!IsServer) return;
+        if (matchStarted.Value)
+            SetP2pSessionStatus(P2pSessionStatus.PeerDisconnected);
+
         // 나간 사람이 배치된 칸을 빈칸으로.
         for (int i = 0; i < slots.Count; i++)
         {
@@ -301,10 +393,10 @@ public class LobbyController : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        bool isDirectP2pReady = p2pConnection != null && p2pConnection.IsReady;
+        bool isDirectP2pReady = p2pConnection != null && p2pConnection.IsGameplayReady;
         if (!P2pMatchStartPolicy.CanStart(NetworkManager.ConnectedClientsIds.Count, isDirectP2pReady))
         {
-            p2pStatusMessage = "Direct P2P is not ready. The 1:1 match will not start through Relay gameplay.";
+            SetP2pSessionStatus(P2pSessionStatus.Preparing);
             return;
         }
 
@@ -357,7 +449,11 @@ public class LobbyController : NetworkBehaviour
         if (nm == null) return;
 
         // 경기 시작됐으면 로비 UI 숨김(게임 HUD가 나옴).
-        if (matchStarted.Value) return;
+        if (matchStarted.Value)
+        {
+            DrawActiveP2pStatus();
+            return;
+        }
 
         GUI.skin.button.fontSize = 16;
         GUI.skin.label.fontSize = 16;
@@ -492,6 +588,15 @@ public class LobbyController : NetworkBehaviour
 
         string playerId = RelayConnectionService.PlayerId;
         GUILayout.Label("플레이어 ID: " + (string.IsNullOrEmpty(playerId) ? "(로그인 전)" : playerId), small);
+    }
+
+    private void DrawActiveP2pStatus()
+    {
+        Rect area = new Rect(12f, 12f, 360f, 64f);
+        GUILayout.BeginArea(area, GUI.skin.box);
+        GUILayout.Label("직접 대전: " + p2pStatusMessage,
+            new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true });
+        GUILayout.EndArea();
     }
 
     /// <summary>연결 도중 무슨 일이 있었는지(접속/끊김/사유)를 방을 만든 쪽과 들어간 쪽 모두에 보여준다.</summary>

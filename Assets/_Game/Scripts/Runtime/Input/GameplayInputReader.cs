@@ -14,12 +14,12 @@ public class GameplayInputReader : MonoBehaviour
             { GameplayInputAction.QueueOneTouchPass, "QueueOneTouchPass" },
             { GameplayInputAction.QueueOneTouchShot, "QueueOneTouchShot" },
             { GameplayInputAction.CancelAction, "CancelAction" },
+            { GameplayInputAction.PowerActivation, "PowerActivation" },
             { GameplayInputAction.ContextQ, "ContextQ" },
             { GameplayInputAction.Grab, "Grab" },
             { GameplayInputAction.ContextF, "ContextF" },
             { GameplayInputAction.Dodge, "Dodge" },
             { GameplayInputAction.Pause, "Pause" },
-            { GameplayInputAction.Restart, "Restart" },
             { GameplayInputAction.ToggleLegacyCamera, "ToggleLegacyCamera" }
         };
 

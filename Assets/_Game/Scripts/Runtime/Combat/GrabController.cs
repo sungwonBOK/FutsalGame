@@ -45,14 +45,7 @@ public sealed class GrabController : MonoBehaviour
         if (defense != null && defense.TryBlockAttack(transform.position))
             return false;
 
-        state.BeginHolding(Time.time, settings.cancelDelay, settings.holderMovementMultiplier);
-        target.BeginHeld(this);
-        heldTarget = target;
-        releaseAt = Time.time + settings.duration;
-
-        heldTarget.GetComponent<CharacterLocomotion>()?.StopForControlRestriction();
-        characterAnimator?.PlayGrabStart();
-        return true;
+        return BeginP2pSession(target, settings);
     }
 
     public bool TryCancel()
@@ -75,6 +68,21 @@ public sealed class GrabController : MonoBehaviour
         state?.ClearGrabState();
         target?.ClearGrabState(this);
         characterAnimator?.PlayGrabRelease();
+        return true;
+    }
+
+    /// <summary>Starts an already-resolved direct-P2P grab without another overlap or defense check.</summary>
+    public bool BeginP2pSession(CharacterState target, CombatConfig.GrabSettings settings)
+    {
+        if (target == null || state == null || IsActive || state.IsStunned || state.IsGrabRestricted || target.IsGrabRestricted)
+            return false;
+
+        state.BeginHolding(Time.time, settings.cancelDelay, settings.holderMovementMultiplier);
+        target.BeginHeld(this);
+        heldTarget = target;
+        releaseAt = Time.time + settings.duration;
+        heldTarget.GetComponent<CharacterLocomotion>()?.StopForControlRestriction();
+        characterAnimator?.PlayGrabStart();
         return true;
     }
 

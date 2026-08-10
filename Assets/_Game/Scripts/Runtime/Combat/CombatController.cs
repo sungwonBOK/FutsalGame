@@ -54,6 +54,8 @@ public class CombatController : MonoBehaviour
     /// <summary>맞았는지 판정해도 되는지. 오프라인이면 항상, 온라인이면 서버만.</summary>
     private bool HasHitAuthority => !IsNetworked || netAgent.IsServer;
 
+    private P2pCombatReplicator DirectP2p => GetComponent<P2pCombatReplicator>();
+
     private readonly CombatActionCooldownTracker actionCooldowns = new CombatActionCooldownTracker();
     private float lastSlideTime = -999f;
     private float slideActiveUntil = -999f;
@@ -128,6 +130,19 @@ public class CombatController : MonoBehaviour
         Punch(transform.forward);
     }
 
+    public bool TryPunch(Vector3 actionDirection)
+    {
+        if (state != null && (state.IsStunned || state.IsGrabRestricted))
+            return false;
+        if (locomotion != null && locomotion.IsDodging)
+            return false;
+        if (!Config.TryGetAction(CombatActionId.BasicPunch, out _) || !IsPunchReady)
+            return false;
+
+        Punch(actionDirection);
+        return true;
+    }
+
     public void Punch(Vector3 actionDirection)
     {
         if (state != null && (state.IsStunned || state.IsGrabRestricted))
@@ -144,6 +159,9 @@ public class CombatController : MonoBehaviour
         }
 
         Vector3 lockedDirection = ResolveCombatDirection(actionDirection);
+        if (TryBeginDirectP2pAction(P2pCombatActionKind.Punch, lockedDirection))
+            return;
+
         // 동작한 본인은 곧바로, 나머지는 아래 브로드캐스트로 한 번씩만 재생한다.
         if (PlaysPresentationLocally)
             PlayActionPresentationLocal(CombatActionKind.Punch);
@@ -181,7 +199,7 @@ public class CombatController : MonoBehaviour
         }
 
         if (nearest != null)
-            Hit(nearest, punch.knockbackForce, punch.hitStunTime, punch.releaseBallOnHit, punch.ballKnockbackForce, CombatHitKind.Standard);
+            Hit(nearest, punch.knockbackForce, punch.hitStunTime, punch.releaseBallOnHit, punch.ballKnockbackForce, CombatHitKind.Standard, PowerGaugeGainSource.BasicPunchHit);
     }
 
     public void CrossPunch(Vector3 actionDirection)
@@ -197,6 +215,9 @@ public class CombatController : MonoBehaviour
             return;
 
         Vector3 lockedDirection = ResolveCombatDirection(actionDirection);
+
+        if (TryBeginDirectP2pAction(P2pCombatActionKind.CrossPunch, lockedDirection))
+            return;
 
         // 기본 펀치와 같은 규칙: 본인은 바로 재생, 판정은 서버.
         if (PlaysPresentationLocally)
@@ -234,12 +255,38 @@ public class CombatController : MonoBehaviour
         }
 
         if (nearest != null)
-            Hit(nearest, crossPunch.knockbackForce, crossPunch.hitStunTime, crossPunch.releaseBallOnHit, crossPunch.ballKnockbackForce, CombatHitKind.Standard);
+            Hit(nearest, crossPunch.knockbackForce, crossPunch.hitStunTime, crossPunch.releaseBallOnHit, crossPunch.ballKnockbackForce, CombatHitKind.Standard, PowerGaugeGainSource.CrossPunchHit);
+    }
+
+    public bool TryCrossPunch(Vector3 actionDirection)
+    {
+        if (state != null && (state.IsStunned || state.IsGrabRestricted))
+            return false;
+        if (locomotion != null && locomotion.IsDodging)
+            return false;
+        if (!Config.TryGetAction(CombatActionId.CrossPunch, out _) || !IsCrossPunchReady)
+            return false;
+
+        CrossPunch(actionDirection);
+        return true;
     }
 
     public void SlideTackle()
     {
         SlideTackle(transform.forward);
+    }
+
+    public bool TrySlideTackle(Vector3 actionDirection)
+    {
+        if (state != null && (state.IsStunned || state.IsGrabRestricted))
+            return false;
+        if (locomotion != null && locomotion.IsDodging)
+            return false;
+        if (!IsSlideReady)
+            return false;
+
+        SlideTackle(actionDirection);
+        return true;
     }
 
     public void SlideTackle(Vector3 actionDirection)
@@ -263,6 +310,9 @@ public class CombatController : MonoBehaviour
         hitThisSlide.Clear();
         // 대시는 이동이라 소유자만 실제로 움직인다(비소유 인스턴스는 모터가 꺼져 있어 무시된다).
         motor.Dash(lockedDirection * Config.TackleVelocity, tackle.activeTime);
+
+        if (TryBeginDirectP2pAction(P2pCombatActionKind.SlideTackle, lockedDirection))
+            return;
 
         if (PlaysPresentationLocally)
             PlayActionPresentationLocal(CombatActionKind.SlideTackle);
@@ -312,7 +362,7 @@ public class CombatController : MonoBehaviour
     private void FixedUpdate()
     {
         // 슬라이딩 도중의 접촉 판정도 서버만 한다.
-        if (!HasHitAuthority)
+        if (!HasHitAuthority || IsDirectP2pActive)
             return;
 
         if (Time.time >= slideActiveUntil)
@@ -332,7 +382,8 @@ public class CombatController : MonoBehaviour
                     tackle.hitStunTime,
                     true,
                     tackle.ballKnockForce,
-                    CombatHitKind.Tackle);
+                    CombatHitKind.Tackle,
+                    PowerGaugeGainSource.SlideTackleHit);
                 if (resolution != CombatHitResolution.Evaded)
                     hitThisSlide.Add(victim);
             }
@@ -353,16 +404,26 @@ public class CombatController : MonoBehaviour
         if (state == null || state.IsStunned || state.IsGrabRestricted || locomotion != null && locomotion.IsDodging)
             return false;
 
-        return grab != null && grab.TryStart(Config.Grab, actionDirection);
+        Vector3 lockedDirection = ResolveCombatDirection(actionDirection);
+        if (TryBeginDirectP2pAction(P2pCombatActionKind.Grab, lockedDirection))
+            return true;
+
+        return grab != null && grab.TryStart(Config.Grab, lockedDirection);
     }
 
     public bool TryCancelGrab()
     {
-        return grab != null && grab.TryCancel();
+        bool cancelled = grab != null && grab.TryCancel();
+        if (cancelled && DirectP2p != null && DirectP2p.HasActiveLocalGrab)
+            DirectP2p.SendGrabReleased();
+        return cancelled;
     }
 
     public bool TryEscapeGrab(Vector3 actionDirection)
     {
+        if (state != null && state.IsHeld && IsDirectP2pActive)
+            return false;
+
         if (state == null || !state.TryEscapeGrab())
             return false;
 
@@ -377,6 +438,175 @@ public class CombatController : MonoBehaviour
     public bool IsGrabRestricted => state != null && state.IsGrabRestricted;
     public bool IsHoldingGrab => state != null && state.IsHolding;
     public bool IsHeldByGrab => state != null && state.IsHeld;
+
+    private bool IsDirectP2pActive => DirectP2p != null && DirectP2p.IsReady;
+
+    private bool TryBeginDirectP2pAction(P2pCombatActionKind actionKind, Vector3 direction)
+    {
+        P2pCombatReplicator directP2p = DirectP2p;
+        if (directP2p == null || !directP2p.IsReady)
+            return false;
+
+        return directP2p.TryBeginLocalAction(
+            actionKind,
+            direction,
+            GetP2pInteractionDelay(actionKind),
+            GetP2pActionLifetime(actionKind));
+    }
+
+    public bool TryFindP2pInteractionTarget(P2pCombatActionKind actionKind, Vector3 direction, out CharacterState target)
+    {
+        float range;
+        float radius;
+        switch (actionKind)
+        {
+            case P2pCombatActionKind.Punch:
+                if (!Config.TryGetAction(CombatActionId.BasicPunch, out CombatActionDefinition punch))
+                {
+                    target = null;
+                    return false;
+                }
+                range = punch.range + 0.08f;
+                radius = punch.radius;
+                break;
+
+            case P2pCombatActionKind.CrossPunch:
+                if (!Config.TryGetAction(CombatActionId.CrossPunch, out CombatActionDefinition crossPunch))
+                {
+                    target = null;
+                    return false;
+                }
+                range = crossPunch.range + 0.10f;
+                radius = crossPunch.radius;
+                break;
+
+            case P2pCombatActionKind.SlideTackle:
+                range = 0f;
+                radius = Config.Tackle.hitRadius + 0.12f;
+                break;
+
+            default:
+                range = Config.Grab.range + 0.05f;
+                radius = Config.Grab.radius;
+                break;
+        }
+
+        Vector3 center = transform.position + CharacterMovementUtility.FlattenOrFallback(direction, transform.forward) * range;
+        int count = Physics.OverlapSphereNonAlloc(center, radius, overlapBuffer);
+        target = null;
+        float nearestDistanceSq = float.PositiveInfinity;
+        for (int i = 0; i < count; i++)
+        {
+            CharacterState candidate = overlapBuffer[i].GetComponentInParent<CharacterState>();
+            NetworkPlayerAgent candidateAgent = candidate != null ? candidate.GetComponent<NetworkPlayerAgent>() : null;
+            if (candidate == null || candidate == state || candidateAgent == null || candidateAgent.IsOwner || candidateAgent.IsAIControlled)
+                continue;
+
+            float distanceSq = (candidate.transform.position - center).sqrMagnitude;
+            if (distanceSq < nearestDistanceSq)
+            {
+                target = candidate;
+                nearestDistanceSq = distanceSq;
+            }
+        }
+
+        return target != null;
+    }
+
+    public P2pCombatResolution ResolveP2pInteraction(P2pCombatActionKind actionKind, Vector3 attackerOrigin)
+    {
+        bool blocked = defense != null && (actionKind == P2pCombatActionKind.SlideTackle
+            ? defense.TryBlockTackle(attackerOrigin)
+            : defense.TryBlockAttack(attackerOrigin));
+        if (blocked)
+            return P2pCombatResolution.Block;
+
+        if (state == null || state.IsInvulnerable)
+        {
+            state?.NotifyEvaded();
+            return P2pCombatResolution.Evade;
+        }
+
+        if (actionKind == P2pCombatActionKind.Grab)
+        {
+            GrabController attackerGrab = FindRemoteHumanCombatant()?.GetComponent<GrabController>();
+            return attackerGrab != null && attackerGrab.BeginP2pSession(state, Config.Grab)
+                ? P2pCombatResolution.Hit
+                : P2pCombatResolution.Evade;
+        }
+
+        GetP2pHitValues(actionKind, out float knockbackForce, out float stunDuration, out bool releaseBall, out float ballKnockbackForce);
+        ApplyP2pHit(attackerOrigin, knockbackForce, stunDuration, releaseBall, ballKnockbackForce);
+        return P2pCombatResolution.Hit;
+    }
+
+    public void PlayP2pRemoteActionPresentation(P2pCombatActionKind actionKind)
+    {
+        if (actionKind != P2pCombatActionKind.Grab)
+            PlayActionPresentationLocal(ToCombatActionKind(actionKind));
+    }
+
+    public void PlayP2pPresentation(P2pPresentationAction action, P2pPresentationProfile profile, Vector3 attackerOrigin)
+    {
+        if (action == P2pPresentationAction.Block)
+        {
+            DefenseBlockDirection blockDirection = DefenseWindow.ResolveDirection(
+                transform.position,
+                transform.forward,
+                attackerOrigin);
+            anim?.PlayP2pPresentation(action, profile.ClipStartOffset, blockDirection);
+            return;
+        }
+
+        if (action == P2pPresentationAction.Tackle && slideDustPrefab != null)
+            Instantiate(slideDustPrefab, transform.position + Vector3.down, Quaternion.identity, transform);
+
+        anim?.PlayP2pPresentation(action, profile.ClipStartOffset, DefenseBlockDirection.Right);
+    }
+
+    public void CancelP2pPresentation(P2pPresentationCancelStyle cancelStyle)
+    {
+        anim?.CancelP2pPresentation(cancelStyle);
+    }
+
+    public void PlayP2pResultPresentation(P2pCombatActionKind actionKind, P2pCombatResolution resolution, Vector3 attackerOrigin, Vector3 actionDirection)
+    {
+        if (resolution == P2pCombatResolution.Block)
+            return;
+
+        CharacterState remoteTarget = FindRemoteHumanCombatant();
+        if (remoteTarget == null)
+            return;
+
+        if (resolution != P2pCombatResolution.Hit || actionKind == P2pCombatActionKind.Grab)
+            return;
+
+        PowerGaugeGainSource source = actionKind == P2pCombatActionKind.Punch
+            ? PowerGaugeGainSource.BasicPunchHit
+            : actionKind == P2pCombatActionKind.CrossPunch
+                ? PowerGaugeGainSource.CrossPunchHit
+                : PowerGaugeGainSource.SlideTackleHit;
+        GetComponent<PowerGauge>()?.TryAdd(source);
+
+        Vector3 hitDirection = remoteTarget.transform.position - attackerOrigin;
+        hitDirection.y = 0f;
+        hitDirection = CharacterMovementUtility.FlattenOrFallback(hitDirection, actionDirection);
+        Vector3 hitPosition = remoteTarget.transform.position + Vector3.up - hitDirection * 0.3f;
+        PlayHitPresentationLocal(hitPosition, hitDirection, involvesLocalPlayer: true);
+    }
+
+    public void BeginP2pGrabWithRemote()
+    {
+        CharacterState remoteTarget = FindRemoteHumanCombatant();
+        if (remoteTarget != null)
+            grab?.BeginP2pSession(remoteTarget, Config.Grab);
+    }
+
+    public void ReleaseP2pGrabWithRemote()
+    {
+        GrabController remoteGrab = FindRemoteHumanCombatant()?.GetComponent<GrabController>();
+        remoteGrab?.Release();
+    }
 
     public static Vector3 CorrectActionDirectionTowardTarget(
         Vector3 origin,
@@ -456,7 +686,8 @@ public class CombatController : MonoBehaviour
         float stunDuration,
         bool releaseBallOnHit,
         float ballKnockbackForce,
-        CombatHitKind hitKind)
+        CombatHitKind hitKind,
+        PowerGaugeGainSource gainSource)
     {
         DefenseController defense = victim.GetComponent<DefenseController>();
         if (defense != null)
@@ -500,7 +731,109 @@ public class CombatController : MonoBehaviour
         }
 
         victim.ApplyHit(dir * knockbackForce, stunDuration);
+        GetComponent<PowerGauge>()?.TryAdd(gainSource);
         return CombatHitResolution.Applied;
+    }
+
+    private float GetP2pInteractionDelay(P2pCombatActionKind actionKind)
+    {
+        switch (actionKind)
+        {
+            case P2pCombatActionKind.Punch: return 0.30f;
+            case P2pCombatActionKind.CrossPunch: return 0.60f;
+            case P2pCombatActionKind.SlideTackle:
+            case P2pCombatActionKind.Grab: return 0.10f;
+            default: return 0f;
+        }
+    }
+
+    private float GetP2pActionLifetime(P2pCombatActionKind actionKind)
+    {
+        return actionKind == P2pCombatActionKind.SlideTackle
+            ? Mathf.Max(0.5f, Config.Tackle.activeTime + 0.25f)
+            : Mathf.Max(0.8f, GetP2pInteractionDelay(actionKind) + 0.25f);
+    }
+
+    private void GetP2pHitValues(
+        P2pCombatActionKind actionKind,
+        out float knockbackForce,
+        out float stunDuration,
+        out bool releaseBall,
+        out float ballKnockbackForce)
+    {
+        if (actionKind == P2pCombatActionKind.SlideTackle)
+        {
+            CombatConfig.TackleSettings tackle = Config.Tackle;
+            knockbackForce = tackle.knockbackForce;
+            stunDuration = tackle.hitStunTime;
+            releaseBall = true;
+            ballKnockbackForce = tackle.ballKnockForce;
+            return;
+        }
+
+        CombatActionId actionId = actionKind == P2pCombatActionKind.CrossPunch
+            ? CombatActionId.CrossPunch
+            : CombatActionId.BasicPunch;
+        if (!Config.TryGetAction(actionId, out CombatActionDefinition action))
+        {
+            knockbackForce = 0f;
+            stunDuration = 0f;
+            releaseBall = false;
+            ballKnockbackForce = 0f;
+            return;
+        }
+
+        knockbackForce = action.knockbackForce;
+        stunDuration = action.hitStunTime;
+        releaseBall = action.releaseBallOnHit;
+        ballKnockbackForce = action.ballKnockbackForce;
+    }
+
+    private void ApplyP2pHit(
+        Vector3 attackerOrigin,
+        float knockbackForce,
+        float stunDuration,
+        bool releaseBallOnHit,
+        float ballKnockbackForce)
+    {
+        Vector3 direction = transform.position - attackerOrigin;
+        direction.y = 0f;
+        direction = CharacterMovementUtility.FlattenOrFallback(direction, transform.forward);
+        Vector3 hitPosition = transform.position + Vector3.up - direction * 0.3f;
+        PlayHitPresentationLocal(hitPosition, direction, involvesLocalPlayer: true);
+
+        PlayerBallHandler victimBall = GetComponent<PlayerBallHandler>();
+        if (releaseBallOnHit && victimBall != null && victimBall.HasBall)
+        {
+            Vector3 ballImpulse = direction * ballKnockbackForce + Vector3.up * (ballKnockbackForce * 0.3f);
+            victimBall.ForceRelease(ballImpulse);
+        }
+
+        state.ApplyDirectP2pHit(direction * knockbackForce, stunDuration);
+    }
+
+    private CharacterState FindRemoteHumanCombatant()
+    {
+        NetworkPlayerAgent[] agents = FindObjectsOfType<NetworkPlayerAgent>();
+        foreach (NetworkPlayerAgent candidate in agents)
+        {
+            if (candidate == null || candidate == netAgent || candidate.IsOwner || candidate.IsAIControlled)
+                continue;
+
+            return candidate.GetComponent<CharacterState>();
+        }
+
+        return null;
+    }
+
+    private static CombatActionKind ToCombatActionKind(P2pCombatActionKind actionKind)
+    {
+        switch (actionKind)
+        {
+            case P2pCombatActionKind.Punch: return CombatActionKind.Punch;
+            case P2pCombatActionKind.CrossPunch: return CombatActionKind.CrossPunch;
+            default: return CombatActionKind.SlideTackle;
+        }
     }
 
     /// <summary>

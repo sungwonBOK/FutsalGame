@@ -12,6 +12,7 @@ public sealed class ContextualPlayerActionRouter
     private readonly CharacterLocomotion locomotion;
     private readonly CombatController combat;
     private readonly PlayerBallHandler ball;
+    private readonly PowerActivationController powerActivation;
     private readonly OneTouchIntentBuffer oneTouchBuffer = new OneTouchIntentBuffer();
     private readonly OneTouchActionExecutor oneTouchExecutor = new OneTouchActionExecutor();
     private readonly PossessionInputContext possessionContext = new PossessionInputContext();
@@ -24,11 +25,13 @@ public sealed class ContextualPlayerActionRouter
     public ContextualPlayerActionRouter(
         CharacterLocomotion locomotion,
         CombatController combat,
-        PlayerBallHandler ball)
+        PlayerBallHandler ball,
+        PowerActivationController powerActivation = null)
     {
         this.locomotion = locomotion;
         this.combat = combat;
         this.ball = ball;
+        this.powerActivation = powerActivation;
     }
 
     public bool IsPreparingOneTouch => oneTouchBuffer.IsPreparing;
@@ -66,6 +69,8 @@ public sealed class ContextualPlayerActionRouter
 
         if (inputReader.ReadButton(GameplayInputAction.CancelAction).WasPressed)
         {
+            if (powerActivation != null && powerActivation.TryCancel())
+                return;
             ball?.CancelCharge();
             oneTouchBuffer.Clear();
             ClearChargeInput();
@@ -74,7 +79,8 @@ public sealed class ContextualPlayerActionRouter
 
         if (contextQ.WasPressed)
         {
-            combat?.TryStartDefense();
+            bool accepted = combat != null && combat.TryStartDefense();
+            powerActivation?.TryConsume(EnhancedActionKind.Defense, accepted);
             return;
         }
 
@@ -95,7 +101,10 @@ public sealed class ContextualPlayerActionRouter
         if (grab.WasPressed)
         {
             if (!actuallyHasBall)
-                combat?.TryGrab(characterActionDirection);
+            {
+                bool accepted = combat != null && combat.TryGrab(characterActionDirection);
+                powerActivation?.TryConsume(EnhancedActionKind.Grab, accepted);
+            }
             return;
         }
 
@@ -103,7 +112,8 @@ public sealed class ContextualPlayerActionRouter
         {
             if (!possessionContext.HasPossessionContext)
             {
-                combat?.SlideTackle(characterActionDirection);
+                bool accepted = combat != null && combat.TrySlideTackle(characterActionDirection);
+                powerActivation?.TryConsume(EnhancedActionKind.SlideTackle, accepted);
                 possessionContext.BeginCombatProtection(Time.time);
             }
             return;
@@ -125,11 +135,12 @@ public sealed class ContextualPlayerActionRouter
             if (possessionContext.HasPossessionContext)
             {
                 if (!mouseActionsBlocked)
-                    BeginChargeInput(BallChargeAction.Pass, ChargeInputButton.Primary);
+                    powerActivation?.TryConsume(EnhancedActionKind.Primary, BeginChargeInput(BallChargeAction.Pass, ChargeInputButton.Primary));
             }
             else
             {
-                combat?.Punch(characterActionDirection);
+                bool accepted = combat != null && combat.TryPunch(characterActionDirection);
+                powerActivation?.TryConsume(EnhancedActionKind.Primary, accepted);
                 possessionContext.BeginCombatProtection(Time.time);
             }
         }
@@ -138,11 +149,12 @@ public sealed class ContextualPlayerActionRouter
             if (possessionContext.HasPossessionContext)
             {
                 if (!mouseActionsBlocked)
-                    BeginChargeInput(BallChargeAction.Shot, ChargeInputButton.Secondary);
+                    powerActivation?.TryConsume(EnhancedActionKind.Secondary, BeginChargeInput(BallChargeAction.Shot, ChargeInputButton.Secondary));
             }
             else
             {
-                combat?.CrossPunch(characterActionDirection);
+                bool accepted = combat != null && combat.TryCrossPunch(characterActionDirection);
+                powerActivation?.TryConsume(EnhancedActionKind.Secondary, accepted);
                 possessionContext.BeginCombatProtection(Time.time);
             }
         }
@@ -222,7 +234,7 @@ public sealed class ContextualPlayerActionRouter
         return true;
     }
 
-    private void BeginChargeInput(BallChargeAction action, ChargeInputButton button)
+    private bool BeginChargeInput(BallChargeAction action, ChargeInputButton button)
     {
         if (ball != null && ball.HasBall)
         {
@@ -232,11 +244,12 @@ public sealed class ContextualPlayerActionRouter
                 activeChargeAction = action;
                 activeChargeButton = button;
             }
-            return;
+            return ball.IsCharging;
         }
 
         pendingChargeAction = action;
         pendingChargeButton = button;
+        return false;
     }
 
     private void ClearChargeInput()

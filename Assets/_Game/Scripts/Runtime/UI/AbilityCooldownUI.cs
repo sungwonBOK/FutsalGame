@@ -21,6 +21,8 @@ public class AbilityCooldownUI : MonoBehaviour
     [SerializeField] private CharacterState playerState;
 
     [SerializeField] private CharacterLocomotion playerLocomotion;
+    [SerializeField] private PowerGauge playerPowerGauge;
+    [SerializeField] private PowerActivationController playerPowerActivation;
 
     [Header("Layout")]
     [Tooltip("화면 우하단 모서리로부터의 여백(픽셀, 1920x1080 기준).")]
@@ -48,6 +50,12 @@ public class AbilityCooldownUI : MonoBehaviour
     [SerializeField] private Color staminaLowColor = new Color(0.95f, 0.45f, 0.25f);
     [SerializeField, Range(0f, 1f)] private float sprintHighlight = 0.35f;
     [SerializeField, Range(0f, 1f)] private float staminaLowThreshold = 0.3f;
+
+    [Header("Power Gauge")]
+    [SerializeField] private float powerGaugeBarHeight = 10f;
+    [SerializeField] private float powerGaugeBarGap = 4f;
+    [SerializeField] private Color powerGaugeColor = new Color(0.95f, 0.64f, 0.18f);
+    [SerializeField] private Color powerGaugeFullColor = new Color(1f, 0.9f, 0.32f);
 
     [Tooltip("쿨다운 중 아이콘이 어두워지는 정도(0=완전히 검게, 1=그대로).")]
     [Range(0f, 1f)]
@@ -82,6 +90,8 @@ public class AbilityCooldownUI : MonoBehaviour
     private Pip dodgePip;
     private RectTransform staminaFill;
     private Image staminaFillImage;
+    private RectTransform powerGaugeFill;
+    private Image powerGaugeFillImage;
 
     /// <summary>아이콘 하나(원판+링+스윕+라벨)와 그 연출 타이머를 묶은 단위. 펀치/슬라이딩이 같은 코드 경로를 공유한다.</summary>
     private class Pip
@@ -109,6 +119,10 @@ public class AbilityCooldownUI : MonoBehaviour
 
         if (playerLocomotion == null && playerCombat != null)
             playerLocomotion = playerCombat.GetComponent<CharacterLocomotion>();
+        if (playerPowerGauge == null && playerCombat != null)
+            playerPowerGauge = playerCombat.GetComponent<PowerGauge>();
+        if (playerPowerActivation == null && playerCombat != null)
+            playerPowerActivation = playerCombat.GetComponent<PowerActivationController>();
 
         BuildHierarchy();
     }
@@ -122,6 +136,8 @@ public class AbilityCooldownUI : MonoBehaviour
         playerCombat = combat;
         playerState = combat != null ? combat.GetComponent<CharacterState>() : null;
         playerLocomotion = combat != null ? combat.GetComponent<CharacterLocomotion>() : null;
+        playerPowerGauge = combat != null ? combat.GetComponent<PowerGauge>() : null;
+        playerPowerActivation = combat != null ? combat.GetComponent<PowerActivationController>() : null;
     }
 
     private void Update()
@@ -148,6 +164,9 @@ public class AbilityCooldownUI : MonoBehaviour
                       playerLocomotion.DodgeBlockedByStamina);
             UpdateStaminaBar(playerLocomotion.Stamina01, playerLocomotion.IsSprinting, stunned);
         }
+
+        if (playerPowerGauge != null)
+            UpdatePowerGaugeBar(playerPowerGauge.Value01, playerPowerGauge.IsFull, playerPowerActivation != null && playerPowerActivation.IsArmed, stunned);
     }
 
     private void UpdateStaminaBar(float amount01, bool sprinting, bool stunned)
@@ -166,6 +185,19 @@ public class AbilityCooldownUI : MonoBehaviour
             color = Desaturate(Dim(color, 0.5f));
 
         staminaFillImage.color = color;
+    }
+
+    private void UpdatePowerGaugeBar(float amount01, bool full, bool armed, bool stunned)
+    {
+        if (powerGaugeFill == null)
+            return;
+
+        powerGaugeFill.anchorMax = new Vector2(Mathf.Clamp01(amount01), 1f);
+        Color color = armed ? Color.Lerp(powerGaugeFullColor, Color.white, 0.45f) : full ? powerGaugeFullColor : powerGaugeColor;
+        if (stunned)
+            color = Desaturate(Dim(color, 0.5f));
+
+        powerGaugeFillImage.color = color;
     }
 
     /// <summary>아이콘 하나를 현재 상태에 맞춰 갱신한다. 상태를 만들지 않고 읽은 값만 그린다.</summary>
@@ -250,12 +282,13 @@ public class AbilityCooldownUI : MonoBehaviour
         float rowWidth = pipSize * 3f + pipSpacing * 2f;
         root = NewRect("AbilityCooldownRoot", (RectTransform)transform);
         root.anchorMin = root.anchorMax = root.pivot = new Vector2(1f, 0f);
-        root.sizeDelta = new Vector2(rowWidth, pipSize + 26f + staminaBarHeight + staminaBarGap);
+        root.sizeDelta = new Vector2(rowWidth, pipSize + 26f + staminaBarHeight + staminaBarGap + powerGaugeBarHeight + powerGaugeBarGap);
         root.anchoredPosition = new Vector2(-screenMargin.x, screenMargin.y);
 
         // 오른쪽이 슬라이딩(K), 그 왼쪽이 펀치(J).
         BuildStaminaBar(rowWidth);
-        float y = staminaBarHeight + staminaBarGap;
+        BuildPowerGaugeBar(rowWidth);
+        float y = staminaBarHeight + staminaBarGap + powerGaugeBarHeight + powerGaugeBarGap;
         dodgePip = BuildPip("Pip_Dodge", "L", "회피", dodgeColor, new Vector2(0f, y));
         punchPip = BuildPip("Pip_Punch", "J", "펀치", punchColor, new Vector2(pipSize + pipSpacing, y));
         slidePip = BuildPip("Pip_Slide", "K", "슬라이딩", slideColor, new Vector2((pipSize + pipSpacing) * 2f, y));
@@ -276,6 +309,23 @@ public class AbilityCooldownUI : MonoBehaviour
         staminaFill.anchorMax = Vector2.one;
         staminaFill.offsetMin = Vector2.zero;
         staminaFill.offsetMax = Vector2.zero;
+    }
+
+    private void BuildPowerGaugeBar(float width)
+    {
+        RectTransform bar = NewRect("PowerGaugeBar", root);
+        bar.anchorMin = bar.anchorMax = bar.pivot = new Vector2(0f, 0f);
+        bar.sizeDelta = new Vector2(width, powerGaugeBarHeight);
+        bar.anchoredPosition = new Vector2(0f, staminaBarHeight + staminaBarGap);
+
+        NewImage("BarBackground", bar, null, new Color(0.02f, 0.03f, 0.06f, 0.72f));
+        Image fill = NewImage("BarFill", bar, null, powerGaugeColor);
+        powerGaugeFillImage = fill;
+        powerGaugeFill = fill.rectTransform;
+        powerGaugeFill.anchorMin = Vector2.zero;
+        powerGaugeFill.anchorMax = Vector2.zero;
+        powerGaugeFill.offsetMin = Vector2.zero;
+        powerGaugeFill.offsetMax = Vector2.zero;
     }
 
     private Pip BuildPip(string name, string key, string label, Color accent, Vector2 pos)

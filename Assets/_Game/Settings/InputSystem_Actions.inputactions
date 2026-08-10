@@ -61,15 +61,6 @@
                     "initialStateCheck": false
                 },
                 {
-                    "name": "Restart",
-                    "type": "Button",
-                    "id": "54040be0-8416-4656-83e1-b944c29b7286",
-                    "expectedControlType": "",
-                    "processors": "",
-                    "interactions": "",
-                    "initialStateCheck": false
-                },
-                {
                     "name": "ToggleLegacyCamera",
                     "type": "Button",
                     "id": "80a4171f-307c-466d-b87f-3a140f92a1fd",
@@ -154,6 +145,15 @@
                     "name": "Dodge",
                     "type": "Button",
                     "id": "b77b0845-7ce7-44a8-9094-98dd6bdd173d",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "PowerActivation",
+                    "type": "Button",
+                    "id": "a9d476d4-3d19-482e-a694-1027fde332e4",
                     "expectedControlType": "",
                     "processors": "",
                     "interactions": "",
@@ -427,28 +427,6 @@
                 },
                 {
                     "name": "",
-                    "id": "af566c8a-1726-4bad-acc8-ae4dbb3c33ab",
-                    "path": "<Keyboard>/r",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "Keyboard&Mouse",
-                    "action": "Restart",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
-                    "id": "f2982f8c-f6f3-4ac7-9be7-35b809fbd048",
-                    "path": "<Keyboard>/space",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "Keyboard&Mouse",
-                    "action": "Restart",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
                     "id": "839a1278-86f6-478d-82c6-637542beb25d",
                     "path": "<Keyboard>/f5",
                     "interactions": "",
@@ -666,6 +644,17 @@
                     "action": "QueueOneTouchShot",
                     "isComposite": false,
                     "isPartOfComposite": true
+                },
+                {
+                    "name": "",
+                    "id": "71278abe-0476-4e87-a6e8-daef97385c58",
+                    "path": "<Keyboard>/r",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "PowerActivation",
+                    "isComposite": false,
+                    "isPartOfComposite": false
                 }
             ]
         },

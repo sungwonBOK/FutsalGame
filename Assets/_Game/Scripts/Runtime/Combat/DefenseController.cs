@@ -50,6 +50,7 @@ public sealed class DefenseController : MonoBehaviour
             PlayTackleBlock(direction);
         else
             characterAnimator?.PlayBlock(direction);
+        GetComponent<PowerGauge>()?.TryAdd(PowerGaugeGainSource.DefenseSuccess);
         return true;
     }
 

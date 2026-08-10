@@ -11,6 +11,7 @@ public class PlayerInput : MonoBehaviour
     private CombatController combat;
     private PlayerBallHandler ball;
     private CharacterState state;
+    private PowerActivationController powerActivation;
     private ContextualPlayerActionRouter actionRouter;
     private float lastSprintPressTime = -1f;
     private bool burstSprintRequested;
@@ -24,7 +25,10 @@ public class PlayerInput : MonoBehaviour
         combat = GetComponent<CombatController>();
         ball = GetComponent<PlayerBallHandler>();
         state = GetComponent<CharacterState>();
-        actionRouter = new ContextualPlayerActionRouter(locomotion, combat, ball);
+        powerActivation = GetComponent<PowerActivationController>();
+        if (powerActivation == null && GetComponent<PowerGauge>() != null)
+            powerActivation = gameObject.AddComponent<PowerActivationController>();
+        actionRouter = new ContextualPlayerActionRouter(locomotion, combat, ball, powerActivation);
 
         EnsureInputReader();
 
@@ -61,11 +65,18 @@ public class PlayerInput : MonoBehaviour
         GameplayInputButtonState sprintButton = inputReader != null
             ? inputReader.ReadButton(GameplayInputAction.Sprint)
             : default;
+        GameplayInputButtonState powerActivationButton = inputReader != null
+            ? inputReader.ReadButton(GameplayInputAction.PowerActivation)
+            : default;
+        if (powerActivationButton.WasPressed)
+            powerActivation?.TryArm();
         bool sprint = sprintButton.IsPressed;
         UpdateBurstSprintRequest(sprintButton);
         bool hasBall = ball != null && ball.HasBall;
         Vector3 moveDirection = BuildCameraRelativeMoveDirection(moveInput, movementReference);
         locomotion.SetPlayerMoveInput(moveInput, moveDirection, sprint, hasBall, burstSprintRequested);
+        if (sprintButton.WasPressed && burstSprintRequested)
+            powerActivation?.TryConsume(EnhancedActionKind.BurstSprint, locomotion.IsBurstSprinting);
 
         Vector3 characterActionDirection = locomotion.ActionDirection;
         Vector3 ballAimDirection = BuildPlanarCameraForward(movementReference, transform.forward);

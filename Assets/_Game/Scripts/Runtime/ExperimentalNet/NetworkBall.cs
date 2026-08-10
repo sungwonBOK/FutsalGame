@@ -1,4 +1,5 @@
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
 
 /// <summary>
@@ -25,17 +26,32 @@ public class NetworkBall : NetworkBehaviour
     /// 오프라인이면 항상 true, 온라인이면 서버(호스트)만 true.
     /// </summary>
     public static bool LocalHasAuthority =>
-        Instance == null || !Instance.IsSpawned || Instance.IsServer;
+        Instance == null || !Instance.IsSpawned
+            || (Instance.ballAuthority != null && Instance.ballAuthority.IsDirectP2pActive
+                ? Instance.ballAuthority.IsLocalAuthority
+                : Instance.IsServer);
 
     /// <summary>공을 가진 선수의 NetworkObjectId. 0이면 무소유.</summary>
     private readonly NetworkVariable<ulong> ownerPlayerObjectId = new NetworkVariable<ulong>(0);
 
     private BallController ball;
+    private BallAuthorityController ballAuthority;
+    private NetworkTransform networkTransform;
 
     private void Awake()
     {
         ball = GetComponent<BallController>();
+        ballAuthority = GetComponent<BallAuthorityController>();
+        if (ballAuthority == null)
+            ballAuthority = gameObject.AddComponent<BallAuthorityController>();
+        networkTransform = GetComponent<NetworkTransform>();
         Instance = this;
+    }
+
+    private void Update()
+    {
+        if (networkTransform != null)
+            networkTransform.enabled = ballAuthority == null || !ballAuthority.UsesDirectP2pTransport;
     }
 
     // NetworkBehaviour의 OnDestroy는 내부 정리를 하므로 반드시 이어서 호출해야 한다.

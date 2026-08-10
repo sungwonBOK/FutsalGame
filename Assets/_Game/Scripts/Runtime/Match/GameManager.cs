@@ -148,15 +148,6 @@ public class GameManager : MonoBehaviour
             State != MatchState.GameOver)
             TogglePause();
 
-        // 종료 화면: Restart 액션으로 새 경기.
-        if (State == MatchState.GameOver && !IsPaused &&
-            inputReader != null &&
-            inputReader.ReadButton(GameplayInputAction.Restart).WasPressed)
-        {
-            BeginMatch();
-            return;
-        }
-
         // 경기 시간은 Playing 중에만 흐른다. (일시정지 시 timeScale=0이라 deltaTime=0이지만 상태로도 이중 차단.)
         if (State == MatchState.Playing && !IsPaused)
         {
@@ -227,6 +218,7 @@ public class GameManager : MonoBehaviour
         OpponentScore = 0;
         TimeRemaining = matchDuration;
         scoringLocked = false;
+        ResetPowerGauges();
 
         yield return StartCoroutine(KickoffRoutine());
     }
@@ -458,6 +450,18 @@ public class GameManager : MonoBehaviour
 
         CombatController combat = t.GetComponent<CombatController>();
         if (combat != null) combat.ResetCombatState();
+    }
+
+    private static void ResetPowerGauges()
+    {
+        foreach (PowerActivationController activation in FindObjectsByType<PowerActivationController>())
+            activation.ResetForNewMatch();
+
+        foreach (PowerGauge gauge in FindObjectsByType<PowerGauge>())
+        {
+            if (gauge.GetComponent<PowerActivationController>() == null)
+                gauge.ResetGauge();
+        }
     }
 
     private void OnDestroy()

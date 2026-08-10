@@ -7,12 +7,12 @@ public enum GameplayInputAction
     QueueOneTouchPass,
     QueueOneTouchShot,
     CancelAction,
+    PowerActivation,
     ContextQ,
     Grab,
     ContextF,
     Dodge,
     Pause,
-    Restart,
     ToggleLegacyCamera
 }
 

@@ -1,0 +1,10 @@
+{"type":"server-started","port":49794,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:49794/?key=e4ca00bb4a92e89f9bd20f0824bd71f18d9d46131e5f2be4ebef6321dd12d89e","screen_dir":"D:\\Unity Projects\\FutsalGame\\.superpowers\\brainstorm\\699-1785429677\\content","state_dir":"D:\\Unity Projects\\FutsalGame\\.superpowers\\brainstorm\\699-1785429677\\state","idle_timeout_ms":14400000}
+{"source":"user-event","type":"click","text":"3\n      상호작용 결과피격·방어·회피·공 소유 전환만 별도 이벤트로 보냅니다.","choice":"outcome","id":null,"timestamp":1785432989826}
+{"source":"user-event","type":"click","text":"2\n      능력 행동행동 번호, 종류, 시각, 방향만 즉시 전송합니다.","choice":"action","id":null,"timestamp":1785432990594}
+{"source":"user-event","type":"click","text":"1\n      이동 상태최신 위치·회전만. 오래된 패킷은 버리고, 멈췄으면 전송을 줄입니다.","choice":"snapshot","id":null,"timestamp":1785432991173}
+{"source":"user-event","type":"click","text":"2\n      능력 행동행동 번호, 종류, 시각, 방향만 즉시 전송합니다.","choice":"action","id":null,"timestamp":1785432991534}
+{"source":"user-event","type":"click","text":"3\n      상호작용 결과피격·방어·회피·공 소유 전환만 별도 이벤트로 보냅니다.","choice":"outcome","id":null,"timestamp":1785432991816}
+{"type":"screen-added","file":"D:\\Unity Projects\\FutsalGame\\.superpowers\\brainstorm\\699-1785429677\\content\\compact-packet-contract.html"}
+{"type":"screen-added","file":"D:\\Unity Projects\\FutsalGame\\.superpowers\\brainstorm\\699-1785429677\\content\\slow-peer-isolation.html"}
+{"type":"screen-added","file":"D:\\Unity Projects\\FutsalGame\\.superpowers\\brainstorm\\699-1785429677\\content\\interaction-resolution.html"}
+{"type":"screen-added","file":"D:\\Unity Projects\\FutsalGame\\.superpowers\\brainstorm\\699-1785429677\\content\\final-1v1-responsibility.html"}

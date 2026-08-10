@@ -1,0 +1,61 @@
+<h2>1:1 원격 멀티플레이 기반</h2>
+<p class="subtitle">게임 결과를 기다리지 않는 P2P 우선 구조. Relay와 감사 서버는 플레이 경로를 막지 않습니다.</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">실제 플레이 경로</div>
+    <div class="mockup-body">
+      <div style="display:flex;gap:12px;align-items:stretch;justify-content:center;flex-wrap:wrap">
+        <div class="card" style="flex:1;min-width:190px">
+          <h3>플레이어 A</h3>
+          <p>입력 → 로컬 이동 · 능력 · 공 예측 → 즉시 연출</p>
+        </div>
+        <div style="display:flex;align-items:center;font-size:1.5rem" aria-label="직접 P2P 전송">↔</div>
+        <div class="card" style="flex:1;min-width:190px">
+          <h3>플레이어 B</h3>
+          <p>입력 → 로컬 이동 · 능력 · 공 예측 → 즉시 연출</p>
+        </div>
+      </div>
+      <p class="subtitle" style="text-align:center;margin-top:14px">이동 상태 · 행동 시작 · 방어/회피 · 상호작용 결과는 직접 교환합니다.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">연결 실패 또는 품질 저하</div>
+      <div class="mockup-body">
+        <p>같은 게임 메시지를 Relay 경로로 전환합니다.</p>
+        <p class="subtitle">전송 경로만 바뀌며, 이동·능력 규칙은 바뀌지 않습니다.</p>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">향후 감사 서버</div>
+      <div class="mockup-body">
+        <p>행동 번호와 결과를 비차단으로 복사해 기록합니다.</p>
+        <p class="subtitle">서버 응답을 기다리지 않으므로 조작감과 경기를 멈추지 않습니다.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>작게 보내는 메시지 원칙</h3>
+  <div class="options">
+    <div class="option" data-choice="snapshot" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content"><h3>이동 상태</h3><p>최신 위치·회전만. 오래된 패킷은 버리고, 멈췄으면 전송을 줄입니다.</p></div>
+    </div>
+    <div class="option" data-choice="action" onclick="toggleSelect(this)">
+      <div class="letter">2</div>
+      <div class="content"><h3>능력 행동</h3><p>행동 번호, 종류, 시각, 방향만 즉시 전송합니다.</p></div>
+    </div>
+    <div class="option" data-choice="outcome" onclick="toggleSelect(this)">
+      <div class="letter">3</div>
+      <div class="content"><h3>상호작용 결과</h3><p>피격·방어·회피·공 소유 전환만 별도 이벤트로 보냅니다.</p></div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle">이 화면은 첫 설계 섹션입니다. P2P 우선 경로와 Relay 폴백의 분리가 맞는지 확인해 주세요.</p>

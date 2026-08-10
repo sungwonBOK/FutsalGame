@@ -44,7 +44,11 @@ public class PlayerBallHandler : MonoBehaviour
     private bool IsNetworked => netAgent != null && netAgent.IsSpawned;
 
     /// <summary>내가 조종하지만 서버는 아닌 경우 — 의도를 서버로 보내야 한다.</summary>
-    private bool ForwardsToServer => IsNetworked && netAgent.IsOwner && !netAgent.IsServer;
+    private bool ForwardsToServer => P2pBallAuthorityPolicy.ShouldForwardOwnerActionToServer(
+        IsNetworked,
+        netAgent != null && netAgent.IsOwner,
+        netAgent != null && netAgent.IsServer,
+        BallAuthorityController.Current != null && BallAuthorityController.Current.IsDirectP2pActive);
 
     /// <summary>
     /// 연출을 이 자리에서 바로 재생할지.
@@ -188,6 +192,11 @@ public class PlayerBallHandler : MonoBehaviour
             {
                 PlayShotPresentation(CaptureShotDirection(impulse, transform.forward));
                 ApplyShotReleaseModifiers(impulse);
+                PublishDirectP2pBallAction(P2pBallActionKind.Shot);
+            }
+            else if (action == BallChargeAction.Pass)
+            {
+                PublishDirectP2pBallAction(P2pBallActionKind.Pass);
             }
         }
     }
@@ -321,7 +330,10 @@ public class PlayerBallHandler : MonoBehaviour
             return false;
 
         Vector3 impulse;
-        return interaction.TryPass(Time.time, actionDirection, transform.forward, out impulse);
+        bool passed = interaction.TryPass(Time.time, actionDirection, transform.forward, out impulse);
+        if (passed)
+            PublishDirectP2pBallAction(P2pBallActionKind.Pass);
+        return passed;
     }
 
     public void ForceRelease(Vector3 impulse)
@@ -382,7 +394,10 @@ public class PlayerBallHandler : MonoBehaviour
         float resolvedForce = ResolveShotForce(force);
         Vector3 impulse = direction * resolvedForce;
         PlayShotPresentation(direction);
-        ReleaseWithImpulse(impulse);
+        if (!ReleaseWithImpulse(impulse))
+            return;
+
+        PublishDirectP2pBallAction(P2pBallActionKind.Shot);
         ApplyShotMotion(resolvedForce);
     }
 
@@ -414,9 +429,32 @@ public class PlayerBallHandler : MonoBehaviour
             actionCamera.PlayShootShake();
     }
 
-    private void ReleaseWithImpulse(Vector3 impulse)
+    public void PlayP2pPresentation(P2pPresentationAction action, P2pPresentationProfile profile)
     {
-        possession.Release(Time.time, impulse);
+        if (action != P2pPresentationAction.Pass && action != P2pPresentationAction.Shot)
+            return;
+
+        if (anim != null)
+            anim.PlayP2pPresentation(action, profile.ClipStartOffset, DefenseBlockDirection.Right);
+
+        if (action == P2pPresentationAction.Shot)
+        {
+            if (shootEffectPrefab != null && ball != null)
+                Instantiate(shootEffectPrefab, ball.transform.position, transform.rotation);
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.PlayShoot();
+        }
+    }
+
+    private bool ReleaseWithImpulse(Vector3 impulse)
+    {
+        return possession.Release(Time.time, impulse);
+    }
+
+    private static void PublishDirectP2pBallAction(P2pBallActionKind actionKind)
+    {
+        if (BallAuthorityController.Current != null)
+            BallAuthorityController.Current.TryPublishLocalAction(actionKind);
     }
 
     private float ResolveShotForce(float force)

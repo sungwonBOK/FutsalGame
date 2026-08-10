@@ -5,6 +5,14 @@
 
 현재 체크아웃 기준의 구현 상태만 기록한다. 세부 설계나 작업 이력은 이 문서에 길게 누적하지 않는다.
 
+## 2026-08-08 Power gauge
+
+- `Player`와 `Opponent`는 `DefaultPowerGaugeConfig`를 참조하는 `PowerGauge`를 사용한다. 기본값은 최대 100, 경기 중 자연 충전 초당 1이며 기본 펀치 10, 크로스 펀치/슬라이딩 태클 15, 방어/회피 10이다.
+- 보상은 실제 타격·방어 성공·회피 성공에만 적용한다. 잡기는 규칙에서 비활성화되어 있으며, 항목과 수치는 ScriptableObject 규칙으로 변경할 수 있다.
+- 게이지는 최대치에서 유지되고 새 경기 시작에서만 초기화된다. 스코어 후 킥오프에서는 유지되며, HUD의 스태미나 바 위에 표시된다.
+- 가득 찬 게이지에서 R을 누르면 강화 대기 상태가 된다. R 재입력 또는 C는 게이지를 보존한 채 대기를 취소하고, 좌/우클릭·Q·E·F·Shift 2연타가 실제로 시작된 경우에만 전량 소비한다. 이번 단계는 강화 컨텍스트 전달 기반만 제공하며 효과 수치와 P2P 패킷은 바꾸지 않는다.
+- Unity EditMode 전체 142/142 통과. 실제 Play Mode에서의 R/C·각 행동 소비·HUD 구분과 2클라이언트 P2P 보상 경로는 별도 수동 확인이 필요하다.
+
 ## 2026-07-20 Update
 
 - Combat tuning is separated into `CombatConfig` ScriptableObject data with `DefaultCombatConfig.asset` linked from scene and `NetPlayer` combat components.
@@ -48,7 +56,7 @@
 - A participant can now select an available BLUE or RED slot themselves. The server accepts only the requesting client's ID, moves that client atomically from any prior team slot, and leaves the current assignment untouched when the requested team is full.
 - `P2pMovementReplicator` now dynamically attaches to each network player. Once the direct channel is ready, local human players send 20 Hz position/yaw snapshots; the one remote human player rejects stale sequences and interpolates its visible movement. Its `ClientNetworkTransform` is disabled during that P2P path so NGO does not compete for the transform.
 - Ball, combat, match state, AI, and action/result traffic still use their existing NGO paths. A two-player room cannot start the match unless the direct P2P channel is ready, so P2P failure does not silently fall back to Relay movement.
-- Verified in Unity EditMode: full suite 102/102 passed. Two-client Relay/direct-connect and Play Mode checks remain manual gates.
+- Verified in Unity EditMode: full suite 102/102 passed. Manual evidence (2026-08-01): direct P2P succeeded when the laptop used a mobile-data hotspot instead of the nested home Wi-Fi router. The earlier wired-PC/home-Wi-Fi failure is therefore consistent with that local double-NAT or NAT-hairpin path, not proof that the signaling path is broken. This does not validate general NAT traversal: TURN and an automatic Relay gameplay fallback are still absent, and broader two-client/Play Mode coverage remains a manual gate.
 
 ## 2026-07-24 Update
 

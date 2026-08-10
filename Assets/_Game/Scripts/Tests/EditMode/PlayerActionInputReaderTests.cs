@@ -35,6 +35,22 @@ public class PlayerActionInputReaderTests
     }
 
     [Test]
+    public void PlayerInput_AndActionRouter_UseThePowerActivationInputContract()
+    {
+        string source = File.ReadAllText(PlayerInputPath);
+        string routerSource = File.ReadAllText(ContextualRouterPath);
+
+        Assert.That(source, Does.Contain("GameplayInputAction.PowerActivation"));
+        Assert.That(source, Does.Contain("EnhancedActionKind.BurstSprint"));
+        Assert.That(routerSource, Does.Contain("PowerActivationController"));
+        Assert.That(routerSource, Does.Contain("EnhancedActionKind.Primary"));
+        Assert.That(routerSource, Does.Contain("EnhancedActionKind.Secondary"));
+        Assert.That(routerSource, Does.Contain("EnhancedActionKind.Defense"));
+        Assert.That(routerSource, Does.Contain("EnhancedActionKind.Grab"));
+        Assert.That(routerSource, Does.Contain("EnhancedActionKind.SlideTackle"));
+    }
+
+    [Test]
     public void PlayerInput_UsesSceneGameplayInputReaderWhenReferenceIsNull()
     {
         GameObject readerHost = new GameObject("Scene Input");
