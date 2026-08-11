@@ -61,8 +61,12 @@ public sealed class P2pLobbySignalRelay : IPeerSignalingTransport
         }
 
         if (peerSignal.SenderClientId != networkManager.LocalClientId
-            || peerSignal.RecipientClientId == networkManager.LocalClientId
-            || !IsConnected(peerSignal.RecipientClientId))
+            || !P2pSignalRoutingPolicy.CanSendToRecipient(
+                networkManager.IsServer,
+                networkManager.LocalClientId,
+                NetworkManager.ServerClientId,
+                peerSignal.RecipientClientId)
+            || (networkManager.IsServer && !IsConnected(peerSignal.RecipientClientId)))
         {
             error = "The P2P signal must target one connected remote peer.";
             return false;

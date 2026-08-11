@@ -52,7 +52,6 @@ public class LobbyController : NetworkBehaviour
     // 동기화되는 슬롯 목록(호스트가 편집).
     private readonly NetworkList<TeamSlot> slots = new NetworkList<TeamSlot>();
     private readonly NetworkList<ulong> p2pParticipantClientIds = new NetworkList<ulong>();
-    private readonly NetworkList<ulong> p2pReadyClientIds = new NetworkList<ulong>();
     private readonly NetworkList<ulong> p2pMeshReadyClientIds = new NetworkList<ulong>();
     private readonly NetworkList<ulong> p2pRecoveryApprovedClientIds = new NetworkList<ulong>();
     private readonly NetworkVariable<bool> matchStarted = new NetworkVariable<bool>(false);
@@ -212,44 +211,6 @@ public class LobbyController : NetworkBehaviour
             if (!p2pParticipantClientIds.Contains(p2pRecoveryApprovedClientIds[i]))
                 p2pRecoveryApprovedClientIds.RemoveAt(i);
         }
-    }
-
-    [Rpc(SendTo.Server)]
-    private void RequestP2pReadyRpc(bool ready, RpcParams rpcParams = default)
-    {
-        if (!IsServer || matchStarted.Value)
-            return;
-
-        ulong clientId = rpcParams.Receive.SenderClientId;
-        if (clientId == NetworkManager.ServerClientId || !p2pParticipantClientIds.Contains(clientId))
-            return;
-
-        SetP2pReady(clientId, ready);
-    }
-
-    private void SetP2pReady(ulong clientId, bool ready)
-    {
-        int index = p2pReadyClientIds.IndexOf(clientId);
-        if (ready && index < 0)
-            p2pReadyClientIds.Add(clientId);
-        else if (!ready && index >= 0)
-            p2pReadyClientIds.RemoveAt(index);
-    }
-
-    private bool AreAllNonHostP2pParticipantsReady()
-    {
-        foreach (ulong clientId in p2pParticipantClientIds)
-        {
-            if (clientId != NetworkManager.ServerClientId && !p2pReadyClientIds.Contains(clientId))
-                return false;
-        }
-
-        return true;
-    }
-
-    private bool IsLocalP2pReady()
-    {
-        return NetworkManager != null && p2pReadyClientIds.Contains(NetworkManager.LocalClientId);
     }
 
     [Rpc(SendTo.Server)]
@@ -456,7 +417,6 @@ public class LobbyController : NetworkBehaviour
             }
         }
 
-        SetP2pReady(clientId, false);
         SetP2pMeshReady(clientId, false);
         SetP2pRecoveryApproved(clientId, false);
         RefreshP2pParticipants();
@@ -553,7 +513,6 @@ public class LobbyController : NetworkBehaviour
         if (MpsNetworkingModePolicy.RequiresDirectP2p(usesMpsRelaySession) &&
             !P2pMatchStartPolicy.CanStart(
                 NetworkManager.ConnectedClientsIds.Count,
-                AreAllNonHostP2pParticipantsReady(),
                 isDirectP2pReady))
         {
             SetP2pSessionStatus(P2pSessionStatus.Preparing);
@@ -998,11 +957,7 @@ public class LobbyController : NetworkBehaviour
                 SvStartMatch();
         }
         else
-        {
-            bool isReady = IsLocalP2pReady();
-            if (GUILayout.Button(isReady ? "P2P 준비 완료 (취소)" : "P2P 준비", GUILayout.Height(40)))
-                RequestP2pReadyRpc(!isReady);
-        }
+            GUILayout.Label("P2P 연결 상태: " + p2pStatusMessage);
         if (GUILayout.Button("나가기", GUILayout.Width(120), GUILayout.Height(40)))
             nm.Shutdown();
         GUILayout.EndHorizontal();
