@@ -18,6 +18,7 @@ public sealed class P2pPeerConnectionRegistry : MonoBehaviour
     private readonly Dictionary<ulong, PeerEventHandlers> handlersByPeer =
         new Dictionary<ulong, PeerEventHandlers>();
     private readonly P2pPeerMeshPolicy meshPolicy = new P2pPeerMeshPolicy(RequiredGameplayChannels);
+    private readonly P2pPeerReadySignalBuffer earlyReadySignals = new P2pPeerReadySignalBuffer();
 
     private ulong localClientId;
     private bool isConfigured;
@@ -88,21 +89,17 @@ public sealed class P2pPeerConnectionRegistry : MonoBehaviour
     public bool ReceiveSignal(P2pPeerSignal signal)
     {
         EnsureConfigured();
-        if (signal.RecipientClientId != localClientId
-            || signal.SenderClientId == localClientId
-            || !connections.TryGetValue(signal.SenderClientId, out P2pConnectionCoordinator connection))
+        if (signal.RecipientClientId != localClientId || signal.SenderClientId == localClientId)
         {
             return false;
         }
 
+        if (!connections.TryGetValue(signal.SenderClientId, out P2pConnectionCoordinator connection))
+            return earlyReadySignals.TryRemember(signal, localClientId);
+
         if (signal.Signal.Kind == P2pSignalKind.Ready)
         {
-            if (connection.State == P2pConnectionState.Idle
-                || connection.State == P2pConnectionState.Failed
-                || connection.State == P2pConnectionState.Closed)
-            {
-                connection.Begin(P2pOfferSelector.IsLocalOfferer(localClientId, signal.SenderClientId));
-            }
+            BeginWhenPeerIsReady(signal.SenderClientId, connection);
 
             return true;
         }
@@ -187,6 +184,7 @@ public sealed class P2pPeerConnectionRegistry : MonoBehaviour
 
     public void Shutdown()
     {
+        earlyReadySignals.Clear();
         foreach (KeyValuePair<ulong, P2pConnectionCoordinator> pair in connections)
             pair.Value.Shutdown();
     }
@@ -211,10 +209,15 @@ public sealed class P2pPeerConnectionRegistry : MonoBehaviour
 
         connections.Add(peerClientId, connection);
         handlersByPeer.Add(peerClientId, handlers);
+
+        if (earlyReadySignals.Consume(peerClientId))
+            BeginWhenPeerIsReady(peerClientId, connection);
     }
 
     private void RemoveStalePeers(HashSet<ulong> nextPeers)
     {
+        earlyReadySignals.RetainOnly(nextPeers);
+
         List<ulong> stalePeers = null;
         foreach (ulong peerClientId in connections.Keys)
         {
@@ -240,6 +243,16 @@ public sealed class P2pPeerConnectionRegistry : MonoBehaviour
     {
         if (P2pPeerSignal.TryCreate(localClientId, peerClientId, message, out P2pPeerSignal signal))
             SignalReady?.Invoke(signal);
+    }
+
+    private void BeginWhenPeerIsReady(ulong peerClientId, P2pConnectionCoordinator connection)
+    {
+        if (connection.State == P2pConnectionState.Idle
+            || connection.State == P2pConnectionState.Failed
+            || connection.State == P2pConnectionState.Closed)
+        {
+            connection.Begin(P2pOfferSelector.IsLocalOfferer(localClientId, peerClientId));
+        }
     }
 
     private void HandlePeerStateChanged(ulong peerClientId, P2pConnectionState state, string message)

@@ -54,6 +54,7 @@ public class LobbyController : NetworkBehaviour
     private readonly NetworkList<ulong> p2pParticipantClientIds = new NetworkList<ulong>();
     private readonly NetworkList<ulong> p2pMeshReadyClientIds = new NetworkList<ulong>();
     private readonly NetworkList<ulong> p2pRecoveryApprovedClientIds = new NetworkList<ulong>();
+    private readonly NetworkList<ulong> gameReadyClientIds = new NetworkList<ulong>();
     private readonly NetworkVariable<bool> matchStarted = new NetworkVariable<bool>(false);
 
     private Screen screen = Screen.Main;
@@ -211,6 +212,12 @@ public class LobbyController : NetworkBehaviour
             if (!p2pParticipantClientIds.Contains(p2pRecoveryApprovedClientIds[i]))
                 p2pRecoveryApprovedClientIds.RemoveAt(i);
         }
+
+        for (int i = gameReadyClientIds.Count - 1; i >= 0; i--)
+        {
+            if (!p2pParticipantClientIds.Contains(gameReadyClientIds[i]))
+                gameReadyClientIds.RemoveAt(i);
+        }
     }
 
     [Rpc(SendTo.Server)]
@@ -244,6 +251,51 @@ public class LobbyController : NetworkBehaviour
         }
 
         return true;
+    }
+
+    [Rpc(SendTo.Server)]
+    private void SetGameReadyRpc(bool isReady, RpcParams rpcParams = default)
+    {
+        if (!IsServer || !p2pParticipantClientIds.Contains(rpcParams.Receive.SenderClientId))
+            return;
+
+        SetGameReady(rpcParams.Receive.SenderClientId, isReady);
+    }
+
+    private void ToggleLocalGameReady()
+    {
+        ulong localClientId = NetworkManager.LocalClientId;
+        bool willBeReady = !gameReadyClientIds.Contains(localClientId);
+        if (IsServer)
+            SetGameReady(localClientId, willBeReady);
+        else
+            SetGameReadyRpc(willBeReady);
+    }
+
+    private void SetGameReady(ulong clientId, bool isReady)
+    {
+        int index = gameReadyClientIds.IndexOf(clientId);
+        if (isReady && index < 0)
+            gameReadyClientIds.Add(clientId);
+        else if (!isReady && index >= 0)
+            gameReadyClientIds.RemoveAt(index);
+    }
+
+    private bool AreAllParticipantsGameReady()
+    {
+        foreach (ulong clientId in p2pParticipantClientIds)
+        {
+            if (!gameReadyClientIds.Contains(clientId))
+                return false;
+        }
+
+        return true;
+    }
+
+    private void ClearGameReady()
+    {
+        if (IsServer)
+            gameReadyClientIds.Clear();
     }
 
     private void SetP2pRecoveryApproved(ulong clientId, bool isApproved)
@@ -429,12 +481,14 @@ public class LobbyController : NetworkBehaviour
         if (!IsServer) return;
         if (CountTeam(team) >= maxSlotsPerTeam) return;
         slots.Add(new TeamSlot { team = team, type = Occupant.Empty, clientId = 0 });
+        ClearGameReady();
     }
 
     private void SvRemoveSlot(int index)
     {
         if (!IsServer || index < 0 || index >= slots.Count) return;
         slots.RemoveAt(index);
+        ClearGameReady();
     }
 
     private void SvSet(int index, Occupant type, ulong clientId)
@@ -443,6 +497,7 @@ public class LobbyController : NetworkBehaviour
         TeamSlot s = slots[index];
         s.type = type; s.clientId = clientId;
         slots[index] = s;
+        ClearGameReady();
     }
 
     /// <summary>
@@ -510,13 +565,23 @@ public class LobbyController : NetworkBehaviour
         if (!IsServer) return;
 
         bool isDirectP2pReady = AreAllP2pParticipantsMeshReady();
-        if (MpsNetworkingModePolicy.RequiresDirectP2p(usesMpsRelaySession) &&
-            !P2pMatchStartPolicy.CanStart(
-                NetworkManager.ConnectedClientsIds.Count,
-                isDirectP2pReady))
+        bool areAllPlayersGameReady = AreAllParticipantsGameReady();
+        if (MpsNetworkingModePolicy.RequiresDirectP2p(usesMpsRelaySession))
         {
-            SetP2pSessionStatus(P2pSessionStatus.Preparing);
-            return;
+            if (!isDirectP2pReady)
+            {
+                SetP2pSessionStatus(P2pSessionStatus.Preparing);
+                return;
+            }
+
+            if (!P2pMatchStartPolicy.CanStart(
+                    NetworkManager.ConnectedClientsIds.Count,
+                    isDirectP2pReady,
+                    areAllPlayersGameReady))
+            {
+                p2pStatusMessage = "Waiting for every player to mark game ready.";
+                return;
+            }
         }
 
         matchStarted.Value = true;
@@ -948,9 +1013,21 @@ public class LobbyController : NetworkBehaviour
         DrawConnectionReport();
         GUILayout.Label("Direct P2P: " + p2pStatusMessage,
             new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true });
+        bool requiresDirectP2p = MpsNetworkingModePolicy.RequiresDirectP2p(usesMpsRelaySession);
+        if (requiresDirectP2p)
+        {
+            GUILayout.Label("Game ready: " + gameReadyClientIds.Count + "/" + p2pParticipantClientIds.Count,
+                new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true });
+        }
 
         GUILayout.Space(6);
         GUILayout.BeginHorizontal();
+        if (requiresDirectP2p)
+        {
+            bool isLocalGameReady = gameReadyClientIds.Contains(nm.LocalClientId);
+            if (GUILayout.Button(isLocalGameReady ? "Ready cancel" : "Game ready", GUILayout.Width(120), GUILayout.Height(40)))
+                ToggleLocalGameReady();
+        }
         if (IsServer)
         {
             if (GUILayout.Button("게임 시작", GUILayout.Height(40)))

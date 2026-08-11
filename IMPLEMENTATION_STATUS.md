@@ -15,6 +15,12 @@
 - Verification: Unity imported the new scripts with no new Console errors. Focused control-plane/mesh/recovery contracts passed `18/18`, and the full EditMode suite passed `168/168`; the only compile warning remains the pre-existing `FindObjectsOfType` obsolete-API warning in `CombatController`. A single Editor Play Mode attempt stalled during Unity's post-test synchronous recompile/domain-reload transition without a gameplay exception, so it was stopped and is not runtime proof. Staged 2/3/6-client mesh, disconnect/reconnect, and score/time/end control-plane Play Mode proof are still required.
 - A Windows development build is available at `Builds/p2p-runtime-validation-6mesh/FutsalGame.exe` (Unity build errors `0`). The build reports that Unity Services needs a linked cloud project; although `cloudProjectId` is populated, `cloudEnabled` is currently `0`, so a live MPS public-room validation requires the project owner to confirm the Editor/Dashboard Services linkage first.
 
+## 2026-08-11 P2P room auto-connect and game-ready gate
+
+- An addressed `Ready` signal that reaches a participant before its peer registry has received the participant list is retained only until that peer coordinator is created. Offer/answer/ICE messages are still rejected unless their coordinator already exists.
+- Joining an MPS Relay room continues to start direct P2P negotiation automatically. Once the direct gameplay mesh is ready, each participant separately toggles `Game ready`; the Host can start only when every participant is game-ready. Any host team-slot edit clears those acknowledgements.
+- Verification: Unity 6000.5.3f1 produced `Builds/p2p-auto-connect-20260811/FutsalGame.exe` successfully (return code `0`). The batch Test Runner exited `0` but did not create its requested result XML, so it is not treated as EditMode pass evidence. An actual Host+Guest room join must still confirm the participant no longer reports an unexpected peer signal and that start remains blocked until both players toggle `Game ready`.
+
 ## 2026-08-11 R power primary effects with direct P2P
 
 - Armed R + LMB now performs a powered primary action. With real ball ownership it releases the normal minimum pass force plus the same upward force, so the Rigidbody follows a visible lob trajectory. Without the ball it selects the closest forward target in the normal basic-punch range and applies a zero-knockback 0.7-second stun; an unavailable or invulnerable target leaves the armed gauge intact.
