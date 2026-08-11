@@ -15,6 +15,8 @@ using UnityEngine;
 [RequireComponent(typeof(CharacterMotor))]
 public class CombatController : MonoBehaviour
 {
+    private const float PowerStunDuration = 0.7f;
+
     private enum CombatHitKind
     {
         Standard,
@@ -140,6 +142,41 @@ public class CombatController : MonoBehaviour
             return false;
 
         Punch(actionDirection);
+        return true;
+    }
+
+    public bool TryPowerStun(Vector3 actionDirection)
+    {
+        if (state != null && (state.IsStunned || state.IsGrabRestricted))
+            return false;
+        if (locomotion != null && locomotion.IsDodging)
+            return false;
+
+        Vector3 lockedDirection = ResolveCombatDirection(actionDirection);
+        if (IsDirectP2pActive)
+        {
+            if (!TryFindP2pInteractionTarget(P2pCombatActionKind.PowerStun, lockedDirection, out _))
+                return false;
+
+            return TryBeginDirectP2pAction(P2pCombatActionKind.PowerStun, lockedDirection);
+        }
+
+        if (ForwardsToServer)
+        {
+            netAgent.RequestCombatActionRpc(CombatActionKind.PowerStun, lockedDirection);
+            return true;
+        }
+
+        if (!HasHitAuthority || !TryFindPowerStunTarget(lockedDirection, out CharacterState target))
+            return false;
+
+        if (target.IsInvulnerable)
+        {
+            target.NotifyEvaded();
+            return false;
+        }
+
+        target.ApplyHit(Vector3.zero, PowerStunDuration);
         return true;
     }
 
@@ -485,6 +522,16 @@ public class CombatController : MonoBehaviour
                 radius = Config.Tackle.hitRadius + 0.12f;
                 break;
 
+            case P2pCombatActionKind.PowerStun:
+                if (!Config.TryGetAction(CombatActionId.BasicPunch, out CombatActionDefinition powerStun))
+                {
+                    target = null;
+                    return false;
+                }
+                range = powerStun.range + 0.08f;
+                radius = powerStun.radius;
+                break;
+
             default:
                 range = Config.Grab.range + 0.05f;
                 radius = Config.Grab.radius;
@@ -515,6 +562,18 @@ public class CombatController : MonoBehaviour
 
     public P2pCombatResolution ResolveP2pInteraction(P2pCombatActionKind actionKind, Vector3 attackerOrigin)
     {
+        if (actionKind == P2pCombatActionKind.PowerStun)
+        {
+            if (state == null || state.IsInvulnerable)
+            {
+                state?.NotifyEvaded();
+                return P2pCombatResolution.Evade;
+            }
+
+            state.ApplyDirectP2pHit(Vector3.zero, PowerStunDuration);
+            return P2pCombatResolution.Hit;
+        }
+
         bool blocked = defense != null && (actionKind == P2pCombatActionKind.SlideTackle
             ? defense.TryBlockTackle(attackerOrigin)
             : defense.TryBlockAttack(attackerOrigin));
@@ -571,6 +630,9 @@ public class CombatController : MonoBehaviour
 
     public void PlayP2pResultPresentation(P2pCombatActionKind actionKind, P2pCombatResolution resolution, Vector3 attackerOrigin, Vector3 actionDirection)
     {
+        if (actionKind == P2pCombatActionKind.PowerStun)
+            return;
+
         if (resolution == P2pCombatResolution.Block)
             return;
 
@@ -743,6 +805,7 @@ public class CombatController : MonoBehaviour
             case P2pCombatActionKind.CrossPunch: return 0.60f;
             case P2pCombatActionKind.SlideTackle:
             case P2pCombatActionKind.Grab: return 0.10f;
+            case P2pCombatActionKind.PowerStun: return 0f;
             default: return 0f;
         }
     }
@@ -810,6 +873,32 @@ public class CombatController : MonoBehaviour
         }
 
         state.ApplyDirectP2pHit(direction * knockbackForce, stunDuration);
+    }
+
+    private bool TryFindPowerStunTarget(Vector3 direction, out CharacterState target)
+    {
+        target = null;
+        if (!Config.TryGetAction(CombatActionId.BasicPunch, out CombatActionDefinition punch))
+            return false;
+
+        Vector3 center = transform.position + direction * punch.range;
+        int count = Physics.OverlapSphereNonAlloc(center, punch.radius, overlapBuffer);
+        float nearestDistanceSq = float.PositiveInfinity;
+        for (int i = 0; i < count; i++)
+        {
+            CharacterState candidate = overlapBuffer[i].GetComponentInParent<CharacterState>();
+            if (candidate == null || candidate == state)
+                continue;
+
+            float distanceSq = (candidate.transform.position - center).sqrMagnitude;
+            if (distanceSq < nearestDistanceSq)
+            {
+                target = candidate;
+                nearestDistanceSq = distanceSq;
+            }
+        }
+
+        return target != null;
     }
 
     private CharacterState FindRemoteHumanCombatant()

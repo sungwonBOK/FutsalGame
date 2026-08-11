@@ -61,6 +61,10 @@ public class LobbyController : NetworkBehaviour
     private string hostJoinCode = "";
     private string statusMessage = "";
     private bool isConnecting;
+    private string mpsRoomName = "Futsal Room";
+    private MpsRoomDefinition[] mpsRooms = Array.Empty<MpsRoomDefinition>();
+    private MpsSessionRoomService mpsSessionRooms;
+    private bool usesMpsRelaySession;
     private P2pLobbySignalRelay p2pSignalRelay;
     private P2pConnectionCoordinator p2pConnection;
     private string p2pStatusMessage = "Waiting for a second player.";
@@ -84,7 +88,10 @@ public class LobbyController : NetworkBehaviour
         }
 
         matchStarted.OnValueChanged += HandleMatchStartedChanged;
-        StartP2pSignaling();
+        if (MpsNetworkingModePolicy.RequiresDirectP2p(usesMpsRelaySession))
+            StartP2pSignaling();
+        else
+            p2pStatusMessage = "MPS Relay session active.";
 
         // 경기가 이미 시작된 뒤에 들어온 사람은 값이 바뀌는 순간을 놓친다.
         // 그대로 두면 그 사람 화면에만 오프라인 캐릭터가 남아 경기에 섞인다.
@@ -394,7 +401,8 @@ public class LobbyController : NetworkBehaviour
         if (!IsServer) return;
 
         bool isDirectP2pReady = p2pConnection != null && p2pConnection.IsGameplayReady;
-        if (!P2pMatchStartPolicy.CanStart(NetworkManager.ConnectedClientsIds.Count, isDirectP2pReady))
+        if (MpsNetworkingModePolicy.RequiresDirectP2p(usesMpsRelaySession) &&
+            !P2pMatchStartPolicy.CanStart(NetworkManager.ConnectedClientsIds.Count, isDirectP2pReady))
         {
             SetP2pSessionStatus(P2pSessionStatus.Preparing);
             return;
@@ -534,6 +542,27 @@ public class LobbyController : NetworkBehaviour
     /// <summary>Relay 조인코드로 방을 만들거나 참가하는 화면.</summary>
     private void DrawOnlineScreen()
     {
+        GUILayout.Label("MPS public rooms");
+        mpsRoomName = GUILayout.TextField(mpsRoomName, 32, GUILayout.Height(28));
+
+        GUI.enabled = !isConnecting;
+        if (GUILayout.Button("Create MPS public room (max 6)", GUILayout.Height(36)))
+            _ = HostViaMpsSessionAsync();
+
+        if (GUILayout.Button("Refresh MPS rooms", GUILayout.Height(30)))
+            _ = RefreshMpsRoomsAsync();
+
+        for (int i = 0; i < mpsRooms.Length; i++)
+        {
+            MpsRoomDefinition room = mpsRooms[i];
+            if (GUILayout.Button($"Join {room.Name} ({room.PlayerCount}/{room.MaxPlayers})", GUILayout.Height(30)))
+                _ = JoinMpsRoomAsync(room);
+        }
+
+        GUI.enabled = true;
+        GUILayout.Space(12);
+        GUILayout.Label("Legacy Relay join code");
+
         // 이미 방을 만든 뒤 다시 누르면 새 코드가 발급되면서 먼저 알려준 코드가 죽는다.
         bool alreadyHosting = !string.IsNullOrEmpty(hostJoinCode);
 
@@ -677,6 +706,91 @@ public class LobbyController : NetworkBehaviour
         {
             // 원인(코드 없음/권한/환경 등)이 그대로 보여야 다음 시도에서 헤매지 않는다.
             statusMessage = "접속 실패 — " + RelayConnectionService.DescribeError(e);
+            Debug.LogException(e, this);
+        }
+        finally
+        {
+            isConnecting = false;
+        }
+    }
+
+    private MpsSessionRoomService GetMpsSessionRooms()
+    {
+        if (mpsSessionRooms != null)
+            return mpsSessionRooms;
+
+        string buildKey = string.IsNullOrWhiteSpace(Application.version) ? "development" : Application.version;
+        mpsSessionRooms = new MpsSessionRoomService(buildKey);
+        return mpsSessionRooms;
+    }
+
+    private async Task HostViaMpsSessionAsync()
+    {
+        if (isConnecting) return;
+
+        isConnecting = true;
+        usesMpsRelaySession = true;
+        statusMessage = "Creating MPS Relay room...";
+        NetworkConnectionReporter.Instance?.Clear();
+
+        try
+        {
+            MpsRoomDefinition room = await GetMpsSessionRooms().CreatePublicRoomAsync(mpsRoomName, MpsRoomDefinition.MaximumPlayers);
+            statusMessage = $"MPS room created: {room.Name}";
+        }
+        catch (Exception e)
+        {
+            usesMpsRelaySession = false;
+            statusMessage = "MPS room creation failed: " + RelayConnectionService.DescribeError(e);
+            Debug.LogException(e, this);
+        }
+        finally
+        {
+            isConnecting = false;
+        }
+    }
+
+    private async Task RefreshMpsRoomsAsync()
+    {
+        if (isConnecting) return;
+
+        isConnecting = true;
+        statusMessage = "Refreshing MPS rooms...";
+
+        try
+        {
+            mpsRooms = await GetMpsSessionRooms().BrowsePublicRoomsAsync();
+            statusMessage = mpsRooms.Length == 0 ? "No compatible MPS rooms found." : $"Found {mpsRooms.Length} MPS room(s).";
+        }
+        catch (Exception e)
+        {
+            statusMessage = "MPS room refresh failed: " + RelayConnectionService.DescribeError(e);
+            Debug.LogException(e, this);
+        }
+        finally
+        {
+            isConnecting = false;
+        }
+    }
+
+    private async Task JoinMpsRoomAsync(MpsRoomDefinition room)
+    {
+        if (isConnecting) return;
+
+        isConnecting = true;
+        usesMpsRelaySession = true;
+        statusMessage = "Joining MPS room...";
+        NetworkConnectionReporter.Instance?.Clear();
+
+        try
+        {
+            await GetMpsSessionRooms().JoinPublicRoomAsync(room);
+            statusMessage = "Joining MPS Relay room...";
+        }
+        catch (Exception e)
+        {
+            usesMpsRelaySession = false;
+            statusMessage = "MPS room join failed: " + RelayConnectionService.DescribeError(e);
             Debug.LogException(e, this);
         }
         finally

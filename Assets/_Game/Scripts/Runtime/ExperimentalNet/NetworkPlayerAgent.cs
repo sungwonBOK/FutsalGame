@@ -19,6 +19,7 @@ public enum CombatActionKind : byte
     Punch,
     SlideTackle,
     CrossPunch,
+    PowerStun,
 }
 
 /// <summary>클라이언트가 서버에 요청하는 공 동작의 종류.</summary>
@@ -26,6 +27,7 @@ public enum BallActionKind : byte
 {
     Shoot,
     Pass,
+    LobPass,
     StartChargeShot,
     StartChargePass,
     ReleaseChargeShot,
@@ -275,7 +277,8 @@ public class NetworkPlayerAgent : NetworkBehaviour
         {
             case CombatActionKind.Punch: combat.Punch(direction); break;
             case CombatActionKind.CrossPunch: combat.CrossPunch(direction); break;
-            default: combat.SlideTackle(direction); break;
+            case CombatActionKind.SlideTackle: combat.SlideTackle(direction); break;
+            case CombatActionKind.PowerStun: combat.TryPowerStun(direction); break;
         }
     }
 

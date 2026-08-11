@@ -248,6 +248,40 @@ public class CombatBallConfigTests
     }
 
     [Test]
+    public void PowerStun_StunsTheClosestForwardTargetWithoutKnockback()
+    {
+        GameObject attackerObject = new GameObject("Attacker");
+        GameObject victimObject = new GameObject("Victim");
+
+        try
+        {
+            victimObject.transform.position = Vector3.forward;
+            Rigidbody victimBody = victimObject.AddComponent<Rigidbody>();
+            victimObject.AddComponent<SphereCollider>();
+            CharacterState victimState = victimObject.AddComponent<CharacterState>();
+            InvokePrivate(victimState, "Awake");
+
+            attackerObject.AddComponent<Rigidbody>();
+            CharacterState attackerState = attackerObject.AddComponent<CharacterState>();
+            CharacterMotor attackerMotor = attackerObject.AddComponent<CharacterMotor>();
+            CombatController combat = attackerObject.AddComponent<CombatController>();
+            InvokePrivate(attackerState, "Awake");
+            InvokePrivate(attackerMotor, "Awake");
+            InvokePrivate(combat, "Awake");
+            Physics.SyncTransforms();
+
+            Assert.That(combat.TryPowerStun(Vector3.forward), Is.True);
+            Assert.That(victimState.IsStunned, Is.True);
+            Assert.That(victimBody.linearVelocity, Is.EqualTo(Vector3.zero));
+        }
+        finally
+        {
+            Object.DestroyImmediate(attackerObject);
+            Object.DestroyImmediate(victimObject);
+        }
+    }
+
+    [Test]
     public void CombatActionCooldownTracker_TracksEachActionIndependently()
     {
         CombatActionCooldownTracker tracker = new CombatActionCooldownTracker();

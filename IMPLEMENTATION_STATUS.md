@@ -5,6 +5,13 @@
 
 현재 체크아웃 기준의 구현 상태만 기록한다. 세부 설계나 작업 이력은 이 문서에 길게 누적하지 않는다.
 
+## 2026-08-11 R power primary effects with direct P2P
+
+- Armed R + LMB now performs a powered primary action. With real ball ownership it releases the normal minimum pass force plus the same upward force, so the Rigidbody follows a visible lob trajectory. Without the ball it selects the closest forward target in the normal basic-punch range and applies a zero-knockback 0.7-second stun; an unavailable or invulnerable target leaves the armed gauge intact.
+- Direct P2P reuses the existing ball authority event/state flow with `LobPass`, including the released Rigidbody vertical velocity, and the existing defender-resolved combat request/result flow with `PowerStun`. `PowerStun` has no new animation or hit presentation; the target's existing stunned input and movement gates apply for the duration.
+- `NetPlayer` now uses the existing `PowerGauge` with `DefaultPowerGaugeConfig`; `PlayerInput` therefore creates the existing `PowerActivationController` for the locally owned network player. No second gauge, transport, animation, VFX, or Input System asset change was added.
+- Verified through Unity MCP: focused contracts/effects and the full EditMode suite `158/158` passed. Manual gate remains: two clients with the direct P2P channel ready must verify R+LMB lob velocity/trajectory and remote 0.7-second input suppression, including no-target, dodge/invulnerability, and re-arming cases.
+
 ## 2026-08-08 Power gauge
 
 - `Player`와 `Opponent`는 `DefaultPowerGaugeConfig`를 참조하는 `PowerGauge`를 사용한다. 기본값은 최대 100, 경기 중 자연 충전 초당 1이며 기본 펀치 10, 크로스 펀치/슬라이딩 태클 15, 방어/회피 10이다.

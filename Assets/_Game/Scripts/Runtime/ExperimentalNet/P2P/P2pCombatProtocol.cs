@@ -16,7 +16,8 @@ public enum P2pCombatActionKind : byte
     Punch = 1,
     SlideTackle = 2,
     CrossPunch = 3,
-    Grab = 4
+    Grab = 4,
+    PowerStun = 5
 }
 
 public enum P2pCombatResolution : byte
@@ -139,7 +140,7 @@ public static class P2pCombatCodec
     }
 
     private static bool IsKnown(P2pCombatMessageKind value) => value >= P2pCombatMessageKind.ActionStart && value <= P2pCombatMessageKind.ActionCancel;
-    private static bool IsKnown(P2pCombatActionKind value) => value >= P2pCombatActionKind.Punch && value <= P2pCombatActionKind.Grab;
+    private static bool IsKnown(P2pCombatActionKind value) => value >= P2pCombatActionKind.Punch && value <= P2pCombatActionKind.PowerStun;
     private static bool IsKnown(P2pCombatResolution value) => value >= P2pCombatResolution.Hit && value <= P2pCombatResolution.Evade;
 }
 

@@ -12,7 +12,8 @@ public enum P2pBallActionKind : byte
 {
     None = 0,
     Pass = 1,
-    Shot = 2
+    Shot = 2,
+    LobPass = 3
 }
 
 /// <summary>Latest-only state published by the single current ball authority.</summary>
@@ -300,7 +301,9 @@ public static class P2pBallEventCodec
             return message.ActionKind == P2pBallActionKind.None;
 
         return message.Kind == P2pBallEventKind.Action
-            && (message.ActionKind == P2pBallActionKind.Pass || message.ActionKind == P2pBallActionKind.Shot);
+            && (message.ActionKind == P2pBallActionKind.Pass
+                || message.ActionKind == P2pBallActionKind.Shot
+                || message.ActionKind == P2pBallActionKind.LobPass);
     }
 }
 

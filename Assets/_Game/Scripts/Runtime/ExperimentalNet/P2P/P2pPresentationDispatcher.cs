@@ -82,7 +82,7 @@ public static class P2pPresentationRouting
 
     public static P2pPresentationAction FromBall(P2pBallActionKind action)
     {
-        return action == P2pBallActionKind.Pass
+        return action == P2pBallActionKind.Pass || action == P2pBallActionKind.LobPass
             ? P2pPresentationAction.Pass
             : P2pPresentationAction.Shot;
     }

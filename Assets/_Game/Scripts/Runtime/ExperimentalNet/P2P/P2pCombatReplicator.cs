@@ -134,10 +134,13 @@ public sealed class P2pCombatReplicator : MonoBehaviour
             return false;
         }
 
-        presentation?.TryPresent(new P2pPresentationRequest(
-            actionId,
-            P2pPresentationRouting.FromCombat(actionKind),
-            pending.Origin));
+        if (actionKind != P2pCombatActionKind.PowerStun)
+        {
+            presentation?.TryPresent(new P2pPresentationRequest(
+                actionId,
+                P2pPresentationRouting.FromCombat(actionKind),
+                pending.Origin));
+        }
         return true;
     }
 
@@ -204,7 +207,7 @@ public sealed class P2pCombatReplicator : MonoBehaviour
         switch (message.Kind)
         {
             case P2pCombatMessageKind.ActionStart:
-                if (IsRemoteHumanPlayer())
+                if (IsRemoteHumanPlayer() && message.ActionKind != P2pCombatActionKind.PowerStun)
                 {
                     presentation?.TryPresent(new P2pPresentationRequest(
                         message.ActionId,

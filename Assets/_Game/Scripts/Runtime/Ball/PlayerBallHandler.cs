@@ -230,6 +230,24 @@ public class PlayerBallHandler : MonoBehaviour
         TryPass(actionDirection);
     }
 
+    public bool TryPowerLobPass(Vector3 actionDirection)
+    {
+        if (!HasBall || interaction == null)
+            return false;
+
+        if (ForwardsToServer)
+        {
+            netAgent.RequestBallActionRpc(BallActionKind.LobPass, actionDirection);
+            return true;
+        }
+
+        Vector3 impulse;
+        bool passed = interaction.TryPowerLobPass(Time.time, actionDirection, transform.forward, out impulse);
+        if (passed)
+            PublishDirectP2pBallAction(P2pBallActionKind.LobPass);
+        return passed;
+    }
+
     public bool TryPerformOneTouch(OneTouchIntent intent, Vector3 actionDirection)
     {
         if (ForwardsToServer)
@@ -292,6 +310,7 @@ public class PlayerBallHandler : MonoBehaviour
         {
             case BallActionKind.Shoot: Shoot(direction); break;
             case BallActionKind.Pass: Pass(direction); break;
+            case BallActionKind.LobPass: TryPowerLobPass(direction); break;
             case BallActionKind.StartChargeShot: StartCharge(BallChargeAction.Shot); break;
             case BallActionKind.StartChargePass: StartCharge(BallChargeAction.Pass); break;
             case BallActionKind.ReleaseChargeShot: ReleaseCharge(BallChargeAction.Shot, direction); break;

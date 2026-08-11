@@ -96,6 +96,14 @@ public sealed class BallInteractionController
         return possession.Release(now, impulse);
     }
 
+    public bool TryPowerLobPass(float now, Vector3 actionDirection, Vector3 fallbackForward, out Vector3 impulse)
+    {
+        CancelAll();
+        Vector3 direction = CaptureDirection(actionDirection, fallbackForward);
+        impulse = direction * config.Pass.minChargeForce + Vector3.up * config.Pass.minChargeForce;
+        return possession.Release(now, impulse);
+    }
+
     public bool StartCharge(float now, Vector3 actionDirection, Vector3 fallbackForward)
     {
         return TryStartCharge(now, BallChargeAction.Shot);

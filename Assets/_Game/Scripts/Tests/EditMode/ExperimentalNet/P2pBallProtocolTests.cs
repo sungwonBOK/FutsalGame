@@ -54,4 +54,31 @@ public class P2pBallProtocolTests
         Assert.That(decoded.AnchorState.AuthorityId, Is.EqualTo(20));
         Assert.That(decoded.AnchorState.Epoch, Is.EqualTo(5));
     }
+
+    [Test]
+    public void EventCodec_RoundTripsLobPassWithUpwardVelocity()
+    {
+        P2pBallActionKind lobPass = (P2pBallActionKind)System.Enum.Parse(
+            typeof(P2pBallActionKind), "LobPass");
+        P2pBallState anchor = new P2pBallState(
+            authorityId: 10,
+            ownerId: 0,
+            epoch: 4,
+            sequence: 13,
+            position: Vector3.zero,
+            rotation: Quaternion.identity,
+            velocity: new Vector3(3.5f, 5f, 0f),
+            angularVelocity: Vector3.zero);
+        P2pBallEvent source = new P2pBallEvent(
+            P2pBallEventKind.Action,
+            lobPass,
+            actionId: 43,
+            sourceAuthorityId: 10,
+            anchorState: anchor);
+
+        Assert.That(P2pBallEventCodec.TryEncode(source, out byte[] payload), Is.True);
+        Assert.That(P2pBallEventCodec.TryDecode(payload, out P2pBallEvent decoded), Is.True);
+        Assert.That(decoded.ActionKind, Is.EqualTo(lobPass));
+        Assert.That(decoded.AnchorState.Velocity.y, Is.EqualTo(5f));
+    }
 }

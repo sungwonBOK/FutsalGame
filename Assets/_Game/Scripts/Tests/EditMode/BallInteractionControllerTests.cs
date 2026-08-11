@@ -85,6 +85,17 @@ public class BallInteractionControllerTests
     }
 
     [Test]
+    public void PowerLobPass_ReleasesWithForwardAndUpwardPassForce()
+    {
+        Assert.That(possession.AcquireInitial(true), Is.True);
+
+        Vector3 impulse;
+        Assert.That(interaction.TryPowerLobPass(10f, Vector3.right, Vector3.forward, out impulse), Is.True);
+        Assert.That(impulse, Is.EqualTo(new Vector3(config.Pass.minChargeForce, config.Pass.minChargeForce, 0f)));
+        Assert.That(ball.CurrentOwner, Is.Null);
+    }
+
+    [Test]
     public void ReleaseCharge_UsesLatestDirectionAndPassForceRange()
     {
         Assert.That(possession.AcquireInitial(true), Is.True);

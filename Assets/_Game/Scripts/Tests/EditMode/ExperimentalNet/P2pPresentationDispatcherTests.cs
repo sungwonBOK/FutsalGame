@@ -4,6 +4,15 @@ using UnityEngine;
 public sealed class P2pPresentationDispatcherTests
 {
     [Test]
+    public void LobPass_UsesTheExistingPassPresentation()
+    {
+        P2pBallActionKind lobPass = (P2pBallActionKind)System.Enum.Parse(
+            typeof(P2pBallActionKind), "LobPass");
+
+        Assert.That(P2pPresentationRouting.FromBall(lobPass), Is.EqualTo(P2pPresentationAction.Pass));
+    }
+
+    [Test]
     public void SameActionId_IsPresentedOnlyOnce()
     {
         GameObject actor = new GameObject("P2pPresentationDispatcherTests");

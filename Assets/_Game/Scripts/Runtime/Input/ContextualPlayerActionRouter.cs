@@ -130,6 +130,15 @@ public sealed class ContextualPlayerActionRouter
             return;
         }
 
+        if (primary.WasPressed && powerActivation != null && powerActivation.IsArmed)
+        {
+            bool accepted = actuallyHasBall
+                ? !mouseActionsBlocked && ball.TryPowerLobPass(ballAimDirection)
+                : combat != null && combat.TryPowerStun(characterActionDirection);
+            powerActivation.TryConsume(EnhancedActionKind.Primary, accepted);
+            return;
+        }
+
         if (primary.WasPressed)
         {
             if (possessionContext.HasPossessionContext)

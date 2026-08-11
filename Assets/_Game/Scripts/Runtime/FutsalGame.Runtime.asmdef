@@ -9,7 +9,7 @@
     "Unity.Services.Core",
     "Unity.Services.Core.Environments",
     "Unity.Services.Authentication",
-    "Unity.Services.Relay",
+    "Unity.Services.Multiplayer",
     "Unity.WebRTC",
     "GUID:f2d49d9fa7e7eb3418e39723a7d3b92f"
   ],
