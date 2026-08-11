@@ -1,25 +1,29 @@
 using System;
+using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Netcode;
 
 /// <summary>
-/// Uses the existing NGO connection only to exchange WebRTC setup messages.
-/// It never carries gameplay data.
+/// Uses the NGO/MPS control plane only to route addressed WebRTC setup
+/// fragments. The Host forwards client-to-client setup packets unchanged; it
+/// never receives or forwards gameplay packets.
 /// </summary>
-public sealed class P2pLobbySignalRelay
+public sealed class P2pLobbySignalRelay : IPeerSignalingTransport
 {
     private const string ClientToHostMessageName = "Futsal.P2P.ClientToHost";
     private const string HostToClientMessageName = "Futsal.P2P.HostToClient";
-    private const int FragmentHeaderBytes = sizeof(byte) + sizeof(ushort) + sizeof(byte) + sizeof(byte) + sizeof(ushort);
+    private const int FragmentHeaderBytes =
+        sizeof(byte) + sizeof(ushort) + sizeof(byte) + sizeof(byte) + sizeof(ushort) + sizeof(ulong) + sizeof(ulong);
 
     private readonly NetworkManager networkManager;
-    private readonly P2pSignalReassembler reassembler = new P2pSignalReassembler();
+    private readonly Dictionary<ulong, P2pSignalReassembler> reassemblersBySender =
+        new Dictionary<ulong, P2pSignalReassembler>();
     private readonly string incomingMessageName;
     private readonly string outgoingMessageName;
     private ushort nextMessageId;
     private bool isStarted;
 
-    public event Action<P2pSignalMessage> SignalReceived;
+    public event Action<P2pPeerSignal> SignalReceived;
 
     public P2pLobbySignalRelay(NetworkManager networkManager)
     {
@@ -43,30 +47,34 @@ public sealed class P2pLobbySignalRelay
             return;
 
         networkManager.CustomMessagingManager.UnregisterNamedMessageHandler(incomingMessageName);
-        reassembler.Clear();
+        reassemblersBySender.Clear();
         isStarted = false;
     }
 
-    public bool TrySend(P2pSignalMessage message, out string error)
+    public bool TrySend(P2pPeerSignal peerSignal, out string error)
     {
         error = null;
-
-        if (!isStarted)
+        if (!isStarted || !networkManager.IsListening)
         {
             error = "P2P signaling is not ready.";
             return false;
         }
 
-        if (!HasExactlyOneRemotePeer())
+        if (peerSignal.SenderClientId != networkManager.LocalClientId
+            || peerSignal.RecipientClientId == networkManager.LocalClientId
+            || !IsConnected(peerSignal.RecipientClientId))
         {
-            error = "A direct P2P game requires exactly two connected players.";
+            error = "The P2P signal must target one connected remote peer.";
             return false;
         }
 
         try
         {
-            foreach (P2pSignalFragment fragment in P2pSignalFragmenter.Split(message, nextMessageId++))
-                SendFragment(fragment);
+            ulong transportReceiver = networkManager.IsServer
+                ? peerSignal.RecipientClientId
+                : NetworkManager.ServerClientId;
+            foreach (P2pSignalFragment fragment in P2pSignalFragmenter.Split(peerSignal.Signal, nextMessageId++))
+                SendFragment(transportReceiver, peerSignal.SenderClientId, peerSignal.RecipientClientId, fragment);
 
             return true;
         }
@@ -77,34 +85,83 @@ public sealed class P2pLobbySignalRelay
         }
     }
 
-    private void ReceiveFragment(ulong senderClientId, FastBufferReader reader)
+    private void ReceiveFragment(ulong transportSenderClientId, FastBufferReader reader)
     {
-        if (!IsExpectedSender(senderClientId) || !TryReadFragment(reader, out P2pSignalFragment fragment))
+        if (!TryReadFragment(reader, out P2pSignalEnvelopeFragment fragment))
             return;
 
-        if (reassembler.TryAdd(fragment, out P2pSignalMessage message))
-            SignalReceived?.Invoke(message);
-    }
-
-    private bool IsExpectedSender(ulong senderClientId)
-    {
         if (networkManager.IsServer)
-            return senderClientId != networkManager.LocalClientId && HasExactlyOneRemotePeer();
+        {
+            ReceiveAtHost(transportSenderClientId, fragment);
+            return;
+        }
 
-        return senderClientId == NetworkManager.ServerClientId;
+        if (transportSenderClientId != NetworkManager.ServerClientId
+            || fragment.RecipientClientId != networkManager.LocalClientId)
+        {
+            return;
+        }
+
+        TryDeliver(fragment);
     }
 
-    private bool HasExactlyOneRemotePeer()
+    private void ReceiveAtHost(ulong transportSenderClientId, P2pSignalEnvelopeFragment fragment)
+    {
+        if (transportSenderClientId != fragment.SenderClientId || !IsConnected(fragment.RecipientClientId))
+            return;
+
+        if (fragment.RecipientClientId == networkManager.LocalClientId)
+        {
+            TryDeliver(fragment);
+            return;
+        }
+
+        SendFragment(
+            fragment.RecipientClientId,
+            fragment.SenderClientId,
+            fragment.RecipientClientId,
+            fragment.Fragment);
+    }
+
+    private void TryDeliver(P2pSignalEnvelopeFragment envelope)
+    {
+        if (!reassemblersBySender.TryGetValue(envelope.SenderClientId, out P2pSignalReassembler reassembler))
+        {
+            reassembler = new P2pSignalReassembler();
+            reassemblersBySender.Add(envelope.SenderClientId, reassembler);
+        }
+
+        if (!reassembler.TryAdd(envelope.Fragment, out P2pSignalMessage message))
+            return;
+
+        if (P2pPeerSignal.TryCreate(envelope.SenderClientId, envelope.RecipientClientId, message, out P2pPeerSignal signal))
+            SignalReceived?.Invoke(signal);
+    }
+
+    private bool IsConnected(ulong clientId)
     {
         if (!networkManager.IsListening)
             return false;
 
-        return networkManager.IsServer
-            ? networkManager.ConnectedClientsIds.Count == 2
-            : networkManager.LocalClientId != NetworkManager.ServerClientId;
+        if (networkManager.IsServer)
+        {
+            foreach (ulong connectedClientId in networkManager.ConnectedClientsIds)
+            {
+                if (connectedClientId == clientId)
+                    return true;
+            }
+
+            return false;
+        }
+
+        return clientId == NetworkManager.ServerClientId;
     }
 
-    private void SendFragment(P2pSignalFragment fragment)
+    private void SendFragment(
+        ulong transportReceiverClientId,
+        ulong senderClientId,
+        ulong recipientClientId,
+        P2pSignalFragment fragment)
     {
         int writerSize = FragmentHeaderBytes + fragment.Payload.Length;
         using FastBufferWriter writer = new FastBufferWriter(writerSize, Allocator.Temp);
@@ -113,30 +170,15 @@ public sealed class P2pLobbySignalRelay
         writer.WriteValueSafe(fragment.Index);
         writer.WriteValueSafe(fragment.Count);
         writer.WriteValueSafe((ushort)fragment.Payload.Length);
+        writer.WriteValueSafe(senderClientId);
+        writer.WriteValueSafe(recipientClientId);
         writer.WriteBytesSafe(fragment.Payload);
-
-        ulong receiverClientId = networkManager.IsServer
-            ? FindRemoteClientId()
-            : NetworkManager.ServerClientId;
-
-        networkManager.CustomMessagingManager.SendNamedMessage(outgoingMessageName, receiverClientId, writer);
+        networkManager.CustomMessagingManager.SendNamedMessage(outgoingMessageName, transportReceiverClientId, writer);
     }
 
-    private ulong FindRemoteClientId()
+    private static bool TryReadFragment(FastBufferReader reader, out P2pSignalEnvelopeFragment envelope)
     {
-        foreach (ulong clientId in networkManager.ConnectedClientsIds)
-        {
-            if (clientId != networkManager.LocalClientId)
-                return clientId;
-        }
-
-        throw new InvalidOperationException("No remote P2P peer is connected.");
-    }
-
-    private static bool TryReadFragment(FastBufferReader reader, out P2pSignalFragment fragment)
-    {
-        fragment = default;
-
+        envelope = default;
         try
         {
             reader.ReadValueSafe(out byte kindValue);
@@ -144,18 +186,37 @@ public sealed class P2pLobbySignalRelay
             reader.ReadValueSafe(out byte index);
             reader.ReadValueSafe(out byte count);
             reader.ReadValueSafe(out ushort payloadLength);
+            reader.ReadValueSafe(out ulong senderClientId);
+            reader.ReadValueSafe(out ulong recipientClientId);
 
             if (payloadLength == 0 || payloadLength > P2pSignalFragmenter.MaxFragmentPayloadBytes)
                 return false;
 
             byte[] payload = new byte[payloadLength];
             reader.ReadBytesSafe(ref payload, payloadLength);
-            fragment = new P2pSignalFragment((P2pSignalKind)kindValue, messageId, index, count, payload);
+            envelope = new P2pSignalEnvelopeFragment(
+                senderClientId,
+                recipientClientId,
+                new P2pSignalFragment((P2pSignalKind)kindValue, messageId, index, count, payload));
             return true;
         }
         catch (OverflowException)
         {
             return false;
+        }
+    }
+
+    private readonly struct P2pSignalEnvelopeFragment
+    {
+        public ulong SenderClientId { get; }
+        public ulong RecipientClientId { get; }
+        public P2pSignalFragment Fragment { get; }
+
+        public P2pSignalEnvelopeFragment(ulong senderClientId, ulong recipientClientId, P2pSignalFragment fragment)
+        {
+            SenderClientId = senderClientId;
+            RecipientClientId = recipientClientId;
+            Fragment = fragment;
         }
     }
 }

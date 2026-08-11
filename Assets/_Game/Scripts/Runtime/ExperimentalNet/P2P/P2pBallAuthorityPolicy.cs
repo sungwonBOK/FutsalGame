@@ -117,6 +117,37 @@ public static class P2pBallAuthorityPolicy
         return true;
     }
 
+    /// <summary>
+    /// Accepts a takeover after the current authority's direct link failed.
+    /// The elected surviving peer becomes authority, but the ball stays free.
+    /// This is intentionally narrower than a normal transfer: it requires the
+    /// locally recorded disconnected authority and one epoch advance.
+    /// </summary>
+    public static bool TryApplyPeerDisconnectTransfer(
+        P2pBallAuthorityState current,
+        ulong disconnectedAuthorityId,
+        ulong sourceAuthorityId,
+        ulong nextAuthorityId,
+        ulong nextOwnerId,
+        uint nextEpoch,
+        out P2pBallAuthorityState next)
+    {
+        next = current;
+        if (disconnectedAuthorityId == 0
+            || disconnectedAuthorityId != current.AuthorityId
+            || sourceAuthorityId == 0
+            || sourceAuthorityId != nextAuthorityId
+            || nextAuthorityId == 0
+            || nextOwnerId != 0
+            || nextEpoch != current.Epoch + 1)
+        {
+            return false;
+        }
+
+        next = new P2pBallAuthorityState(nextAuthorityId, nextOwnerId, nextEpoch);
+        return true;
+    }
+
     private static bool IsNewer(ushort candidate, ushort current)
     {
         ushort difference = (ushort)(candidate - current);

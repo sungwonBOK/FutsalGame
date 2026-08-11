@@ -18,7 +18,7 @@ public sealed class BallAuthorityController : MonoBehaviour
     private BallController ball;
     private NetworkBall networkBall;
     private Rigidbody body;
-    private P2pConnectionCoordinator connection;
+    private P2pPeerConnectionRegistry connections;
     private P2pBallAuthorityState authorityState;
     private bool hasAuthorityState;
     private ushort nextSnapshotSequence;
@@ -27,10 +27,11 @@ public sealed class BallAuthorityController : MonoBehaviour
     private float nextStateAt;
     private ulong pendingAcquireFor;
     private float pendingAcquireExpiresAt;
+    private ulong recentlyDisconnectedAuthorityId;
 
     public bool UsesDirectP2pTransport
     {
-        get { return connection != null && connection.IsBallReady; }
+        get { return connections != null && connections.IsGameplayReady; }
     }
 
     public bool IsDirectP2pActive
@@ -114,7 +115,11 @@ public sealed class BallAuthorityController : MonoBehaviour
     /// Applies the ball consequence of a defender-resolved slide tackle. The existing combat
     /// rule releases the ball, so only authority moves to the attacker; Owner remains empty.
     /// </summary>
-    public bool TryResolveTackle(uint combatActionId, P2pCombatActionKind actionKind, P2pCombatResolution resolution)
+    public bool TryResolveTackle(
+        uint combatActionId,
+        P2pCombatActionKind actionKind,
+        P2pCombatResolution resolution,
+        ulong attackerClientId)
     {
         if (!IsLocalAuthority
             || actionKind != P2pCombatActionKind.SlideTackle
@@ -124,7 +129,9 @@ public sealed class BallAuthorityController : MonoBehaviour
             return false;
         }
 
-        ulong attackerId = ResolveRemoteHumanPlayerId();
+        ulong attackerId = ResolveHumanPlayerIdForClient(attackerClientId);
+        if (attackerId == 0)
+            return false;
         P2pBallAuthorityTransition transition = P2pBallAuthorityPolicy.ResolveTackle(
             authorityState,
             attackerId,
@@ -170,8 +177,9 @@ public sealed class BallAuthorityController : MonoBehaviour
             candidateId,
             authorityState.Epoch);
         if (!P2pBallAcquireRequestCodec.TryEncode(request, out byte[] payload)
-            || connection == null
-            || !connection.TrySendBallEvent(payload))
+            || connections == null
+            || !TryResolveOwnerClientId(authorityState.AuthorityId, out ulong authorityClientId)
+            || !connections.TrySendTo(authorityClientId, P2pGameplayChannel.Ball, payload))
         {
             return false;
         }
@@ -218,32 +226,35 @@ public sealed class BallAuthorityController : MonoBehaviour
 
     private void RefreshConnection()
     {
-        P2pConnectionCoordinator current = P2pConnectionCoordinator.Current;
-        if (connection == current)
+        P2pPeerConnectionRegistry current = P2pPeerConnectionRegistry.Current;
+        if (connections == current)
             return;
 
         Unsubscribe();
-        connection = current;
+        connections = current;
         hasAuthorityState = false;
         pendingAcquireFor = 0;
         nextSnapshotSequence = 0;
         lastReceivedSnapshotSequence = 0;
+        recentlyDisconnectedAuthorityId = 0;
 
-        if (connection == null)
+        if (connections == null)
             return;
 
-        connection.BallStateReceived += ReceiveState;
-        connection.BallEventReceived += ReceiveEvent;
+        connections.BallStateReceived += ReceiveState;
+        connections.BallEventReceived += ReceiveEvent;
+        connections.PeerStateChanged += HandlePeerStateChanged;
     }
 
     private void Unsubscribe()
     {
-        if (connection == null)
+        if (connections == null)
             return;
 
-        connection.BallStateReceived -= ReceiveState;
-        connection.BallEventReceived -= ReceiveEvent;
-        connection = null;
+        connections.BallStateReceived -= ReceiveState;
+        connections.BallEventReceived -= ReceiveEvent;
+        connections.PeerStateChanged -= HandlePeerStateChanged;
+        connections = null;
     }
 
     private void SeedInitialAuthorityIfNeeded()
@@ -276,9 +287,10 @@ public sealed class BallAuthorityController : MonoBehaviour
         nextSnapshotSequence = 1;
     }
 
-    private void ReceiveState(byte[] payload)
+    private void ReceiveState(ulong senderClientId, byte[] payload)
     {
         if (!P2pBallStateCodec.TryDecode(payload, out P2pBallState state)
+            || !IsPlayerOwnedByClient(state.AuthorityId, senderClientId)
             || !hasAuthorityState
             || IsLocalAuthority
             || !P2pBallAuthorityPolicy.ShouldAcceptSnapshot(
@@ -296,16 +308,67 @@ public sealed class BallAuthorityController : MonoBehaviour
         ApplyState(state, localAuthority: false);
     }
 
-    private void ReceiveEvent(byte[] payload)
+    private void ReceiveEvent(ulong senderClientId, byte[] payload)
     {
         if (P2pBallEventCodec.TryDecode(payload, out P2pBallEvent message))
         {
+            if (!IsPlayerOwnedByClient(message.SourceAuthorityId, senderClientId))
+                return;
+
             ReceiveBallEvent(message);
             return;
         }
 
-        if (P2pBallAcquireRequestCodec.TryDecode(payload, out P2pBallAcquireRequest request))
+        if (P2pBallAcquireRequestCodec.TryDecode(payload, out P2pBallAcquireRequest request)
+            && IsPlayerOwnedByClient(request.ClaimantId, senderClientId))
             ReceiveAcquireRequest(request);
+    }
+
+    private void HandlePeerStateChanged(ulong peerClientId, P2pConnectionState state, string message)
+    {
+        if (!P2pPeerRecoveryPolicy.ShouldFreeze(state)
+            || !hasAuthorityState
+            || authorityState.OwnerId == 0
+            || !IsPlayerOwnedByClient(authorityState.OwnerId, peerClientId))
+        {
+            return;
+        }
+
+        // The owner of a dribbling ball is unavailable. Each surviving peer
+        // receives this same direct-link failure and immediately releases its
+        // local ownership view; no Host gameplay packet is involved.
+        recentlyDisconnectedAuthorityId = authorityState.AuthorityId;
+        authorityState = new P2pBallAuthorityState(
+            authorityState.AuthorityId,
+            ownerId: 0,
+            authorityState.Epoch);
+        pendingAcquireFor = 0;
+        ball.ClearOwnerFromP2pAuthority();
+
+        if (!TryResolveSurvivingAuthority(out ulong successorId)
+            || successorId != ResolveLocalPlayerId())
+        {
+            return;
+        }
+
+        P2pBallAuthorityState next = new P2pBallAuthorityState(
+            successorId,
+            ownerId: 0,
+            authorityState.Epoch + 1);
+        P2pBallState anchor = BuildState(next.AuthorityId, next.OwnerId, next.Epoch, sequence: 0);
+        P2pBallEvent transfer = new P2pBallEvent(
+            P2pBallEventKind.AuthorityChanged,
+            P2pBallActionKind.None,
+            NextActionId(),
+            successorId,
+            anchor);
+        if (!SendEventToReadyPeers(transfer))
+            return;
+
+        authorityState = next;
+        nextSnapshotSequence = 1;
+        lastReceivedSnapshotSequence = 0;
+        recentlyDisconnectedAuthorityId = 0;
     }
 
     private void ReceiveBallEvent(P2pBallEvent message)
@@ -334,15 +397,27 @@ public sealed class BallAuthorityController : MonoBehaviour
 
             next = new P2pBallAuthorityState(anchor.AuthorityId, anchor.OwnerId, anchor.Epoch);
         }
-        else if (!P2pBallAuthorityPolicy.TryApplyAuthorityTransfer(
-                     authorityState,
-                     message.SourceAuthorityId,
-                     anchor.AuthorityId,
-                     anchor.OwnerId,
-                     anchor.Epoch,
-                     out next))
+        else
         {
-            return;
+            bool isNormalTransfer = P2pBallAuthorityPolicy.TryApplyAuthorityTransfer(
+                authorityState,
+                message.SourceAuthorityId,
+                anchor.AuthorityId,
+                anchor.OwnerId,
+                anchor.Epoch,
+                out next);
+            if (!isNormalTransfer
+                && !P2pBallAuthorityPolicy.TryApplyPeerDisconnectTransfer(
+                    authorityState,
+                    recentlyDisconnectedAuthorityId,
+                    message.SourceAuthorityId,
+                    anchor.AuthorityId,
+                    anchor.OwnerId,
+                    anchor.Epoch,
+                    out next))
+            {
+                return;
+            }
         }
 
         authorityState = next;
@@ -351,6 +426,7 @@ public sealed class BallAuthorityController : MonoBehaviour
         if (IsLocalAuthority)
             nextSnapshotSequence = (ushort)(anchor.Sequence + 1);
         pendingAcquireFor = 0;
+        recentlyDisconnectedAuthorityId = 0;
         ApplyState(anchor, IsLocalAuthority);
     }
 
@@ -423,15 +499,22 @@ public sealed class BallAuthorityController : MonoBehaviour
     private bool SendState(P2pBallState state)
     {
         return P2pBallStateCodec.TryEncode(state, out byte[] payload)
-            && connection != null
-            && connection.TrySendBallState(payload);
+            && connections != null
+            && connections.TryBroadcastBallState(payload);
     }
 
     private bool SendEvent(P2pBallEvent message)
     {
         return P2pBallEventCodec.TryEncode(message, out byte[] payload)
-            && connection != null
-            && connection.TrySendBallEvent(payload);
+            && connections != null
+            && connections.TryBroadcastBallEvent(payload);
+    }
+
+    private bool SendEventToReadyPeers(P2pBallEvent message)
+    {
+        return P2pBallEventCodec.TryEncode(message, out byte[] payload)
+            && connections != null
+            && connections.TryBroadcastBallEventToReadyPeers(payload);
     }
 
     private bool IsWithinAcquireRange(PlayerBallHandler candidate)
@@ -483,7 +566,56 @@ public sealed class BallAuthorityController : MonoBehaviour
         return 0;
     }
 
-    private static ulong ResolveRemoteHumanPlayerId()
+    private bool TryResolveSurvivingAuthority(out ulong authorityId)
+    {
+        authorityId = 0;
+        if (connections == null || NetworkManager.Singleton == null)
+            return false;
+
+        ulong selectedClientId = ulong.MaxValue;
+        NetworkPlayerAgent[] agents = FindObjectsByType<NetworkPlayerAgent>();
+        foreach (NetworkPlayerAgent agent in agents)
+        {
+            if (agent == null || !agent.IsSpawned || agent.IsAIControlled)
+                continue;
+
+            ulong clientId = agent.OwnerClientId;
+            if (clientId != NetworkManager.Singleton.LocalClientId
+                && !connections.IsPeerGameplayReady(clientId))
+            {
+                continue;
+            }
+
+            if (clientId < selectedClientId)
+            {
+                selectedClientId = clientId;
+                authorityId = agent.NetworkObjectId;
+            }
+        }
+
+        return authorityId != 0;
+    }
+
+    private static bool TryResolveOwnerClientId(ulong playerObjectId, out ulong ownerClientId)
+    {
+        ownerClientId = 0;
+        if (NetworkManager.Singleton == null
+            || !NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(playerObjectId, out NetworkObject networkObject)
+            || networkObject == null)
+        {
+            return false;
+        }
+
+        ownerClientId = networkObject.OwnerClientId;
+        return true;
+    }
+
+    private static bool IsPlayerOwnedByClient(ulong playerObjectId, ulong clientId)
+    {
+        return TryResolveOwnerClientId(playerObjectId, out ulong ownerClientId) && ownerClientId == clientId;
+    }
+
+    private static ulong ResolveHumanPlayerIdForClient(ulong clientId)
     {
         NetworkPlayerAgent[] agents = FindObjectsByType<NetworkPlayerAgent>();
         foreach (NetworkPlayerAgent agent in agents)
@@ -491,7 +623,7 @@ public sealed class BallAuthorityController : MonoBehaviour
             if (agent != null
                 && agent.IsSpawned
                 && !agent.IsAIControlled
-                && !agent.IsLocalHumanPlayer)
+                && agent.OwnerClientId == clientId)
             {
                 return agent.NetworkObjectId;
             }

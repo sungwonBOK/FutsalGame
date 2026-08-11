@@ -87,4 +87,37 @@ public class P2pBallAuthorityPolicyTests
                 out _),
             Is.False);
     }
+
+    [Test]
+    public void AcceptPeerDisconnectTransfer_RequiresTheDisconnectedAuthorityAndLeavesBallUnowned()
+    {
+        P2pBallAuthorityState current = new P2pBallAuthorityState(
+            authorityId: 10,
+            ownerId: 10,
+            epoch: 4);
+
+        Assert.That(
+            P2pBallAuthorityPolicy.TryApplyPeerDisconnectTransfer(
+                current,
+                disconnectedAuthorityId: 10,
+                sourceAuthorityId: 20,
+                nextAuthorityId: 20,
+                nextOwnerId: 0,
+                nextEpoch: 5,
+                out P2pBallAuthorityState next),
+            Is.True);
+        Assert.That(next.AuthorityId, Is.EqualTo(20));
+        Assert.That(next.OwnerId, Is.EqualTo(0));
+
+        Assert.That(
+            P2pBallAuthorityPolicy.TryApplyPeerDisconnectTransfer(
+                current,
+                disconnectedAuthorityId: 10,
+                sourceAuthorityId: 20,
+                nextAuthorityId: 20,
+                nextOwnerId: 20,
+                nextEpoch: 5,
+                out _),
+            Is.False);
+    }
 }

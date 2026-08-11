@@ -3,9 +3,9 @@ using NUnit.Framework;
 public class MpsNetworkingModePolicyTests
 {
     [Test]
-    public void RequiresDirectP2p_IsFalseForAnMpsRelaySession()
+    public void RequiresDirectP2p_UsesTheGameplayMeshForAnMpsRelaySession()
     {
-        Assert.That(MpsNetworkingModePolicy.RequiresDirectP2p(true), Is.False);
+        Assert.That(MpsNetworkingModePolicy.RequiresDirectP2p(true), Is.True);
     }
 
     [Test]

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Unity.Services.Multiplayer;
 
-public sealed class MpsSessionRoomService
+public sealed class MpsSessionRoomService : IRoomService
 {
     public const string BuildPropertyKey = "build";
 

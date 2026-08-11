@@ -5,6 +5,16 @@
 
 현재 체크아웃 기준의 구현 상태만 기록한다. 세부 설계나 작업 이력은 이 문서에 길게 누적하지 않는다.
 
+## 2026-08-11 Six-player MPS control plane and P2P gameplay mesh
+
+- MPS/NGO remains the control plane for room membership, teams, explicit non-Host ready state, match start/end, score, timer, and reconnect approval. MPS sessions now require the direct gameplay mesh instead of disabling it.
+- `IRoomService` keeps the MPS public-room adapter behind a room-control contract, while `IPeerSignalingTransport` keeps the NGO addressed signaling relay behind a setup-only transport contract. Neither boundary exposes gameplay packets, so a Steam Lobby or Steam signaling implementation can replace it without changing P2P gameplay consumers.
+- `P2pPeerConnectionRegistry` owns one WebRTC coordinator for every remote client ID. `P2pLobbySignalRelay` routes addressed offer/answer/ICE fragments through the Host control plane only; movement, combat, ball state/events, and presentation use registry broadcast or target APIs and do not use Host gameplay forwarding.
+- The Host tracks all active participant mesh-ready reports. A Host-alone match may start; otherwise every non-Host must press P2P ready and every participant must report a complete gameplay mesh. The MPS room limit remains six, preserving the existing 3v3 lobby defaults.
+- A failed direct peer link freezes that remote player at its most recently received pose. If the peer owned the ball, surviving peers clear its ownership locally. Resume requires rebuilt local mesh readiness plus an NGO Host-approved recovery ID; the restored pose is applied with zero linear and angular velocity and no ball possession.
+- Verification: Unity imported the new scripts with no new Console errors. Focused control-plane/mesh/recovery contracts passed `18/18`, and the full EditMode suite passed `168/168`; the only compile warning remains the pre-existing `FindObjectsOfType` obsolete-API warning in `CombatController`. A single Editor Play Mode attempt stalled during Unity's post-test synchronous recompile/domain-reload transition without a gameplay exception, so it was stopped and is not runtime proof. Staged 2/3/6-client mesh, disconnect/reconnect, and score/time/end control-plane Play Mode proof are still required.
+- A Windows development build is available at `Builds/p2p-runtime-validation-6mesh/FutsalGame.exe` (Unity build errors `0`). The build reports that Unity Services needs a linked cloud project; although `cloudProjectId` is populated, `cloudEnabled` is currently `0`, so a live MPS public-room validation requires the project owner to confirm the Editor/Dashboard Services linkage first.
+
 ## 2026-08-11 R power primary effects with direct P2P
 
 - Armed R + LMB now performs a powered primary action. With real ball ownership it releases the normal minimum pass force plus the same upward force, so the Rigidbody follows a visible lob trajectory. Without the ball it selects the closest forward target in the normal basic-punch range and applies a zero-knockback 0.7-second stun; an unavailable or invulnerable target leaves the armed gauge intact.

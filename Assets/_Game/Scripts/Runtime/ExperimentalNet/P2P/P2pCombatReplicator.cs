@@ -1,9 +1,11 @@
 using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
-/// Routes direct 1:1 human combat through the reliable P2P channel. The defending local player
-/// resolves an interaction exactly once; NGO remains the fallback when this channel is unavailable.
+/// Routes human combat through the reliable direct mesh. The defending local
+/// player resolves an interaction exactly once; NGO remains the fallback while
+/// the mesh is unavailable.
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class P2pCombatReplicator : MonoBehaviour
@@ -18,12 +20,12 @@ public sealed class P2pCombatReplicator : MonoBehaviour
     private NetworkPlayerAgent playerAgent;
     private CombatController combat;
     private P2pPresentationDispatcher presentation;
-    private P2pConnectionCoordinator connection;
+    private P2pPeerConnectionRegistry connections;
     private uint nextActionId;
     private ushort nextSequence;
     private uint activeGrabId;
 
-    public bool IsReady => connection != null && connection.IsCombatReady && IsHumanMatchPlayer();
+    public bool IsReady => connections != null && connections.IsGameplayReady && IsHumanMatchPlayer();
     public bool HasActiveLocalGrab => activeGrabId != 0;
 
     private void Awake()
@@ -61,9 +63,12 @@ public sealed class P2pCombatReplicator : MonoBehaviour
             if (pending.RequestSent || Time.time < pending.ContactAt)
                 continue;
 
-            if (!combat.TryFindP2pInteractionTarget(pending.ActionKind, pending.Direction, out _))
+            if (!combat.TryFindP2pInteractionTarget(pending.ActionKind, pending.Direction, out CharacterState target)
+                || !TryGetOwnerClientId(target, out ulong targetClientId))
                 continue;
 
+            pending.TargetClientId = targetClientId;
+            pendingActions[pair.Key] = pending;
             (requestsToSend ??= new List<uint>()).Add(pair.Key);
         }
 
@@ -74,7 +79,7 @@ public sealed class P2pCombatReplicator : MonoBehaviour
                 PendingAction pending = pendingActions[actionId];
                 pending.RequestSent = true;
                 pendingActions[actionId] = pending;
-                Send(new P2pCombatMessage(
+                SendTo(pending.TargetClientId, new P2pCombatMessage(
                     P2pCombatMessageKind.InteractionRequest,
                     actionId,
                     nextSequence++,
@@ -94,10 +99,10 @@ public sealed class P2pCombatReplicator : MonoBehaviour
 
     private void OnDisable()
     {
-        if (connection != null)
-            connection.CombatReceived -= ReceiveCombat;
+        if (connections != null)
+            connections.CombatReceived -= ReceiveCombat;
 
-        connection = null;
+        connections = null;
         pendingActions.Clear();
     }
 
@@ -186,28 +191,31 @@ public sealed class P2pCombatReplicator : MonoBehaviour
 
     private void RefreshConnection()
     {
-        P2pConnectionCoordinator current = P2pConnectionCoordinator.Current;
-        if (connection == current)
+        P2pPeerConnectionRegistry current = P2pPeerConnectionRegistry.Current;
+        if (connections == current)
             return;
 
-        if (connection != null)
-            connection.CombatReceived -= ReceiveCombat;
+        if (connections != null)
+            connections.CombatReceived -= ReceiveCombat;
 
-        connection = current;
+        connections = current;
         pendingActions.Clear();
-        if (connection != null)
-            connection.CombatReceived += ReceiveCombat;
+        if (connections != null)
+            connections.CombatReceived += ReceiveCombat;
     }
 
-    private void ReceiveCombat(byte[] payload)
+    private void ReceiveCombat(ulong senderClientId, byte[] payload)
     {
         if (!P2pCombatCodec.TryDecode(payload, out P2pCombatMessage message))
             return;
 
+        bool isFromThisRemotePlayer = IsRemoteHumanPlayer() && playerAgent.OwnerClientId == senderClientId;
+        bool isForLocalPlayer = IsLocalHumanPlayer();
+
         switch (message.Kind)
         {
             case P2pCombatMessageKind.ActionStart:
-                if (IsRemoteHumanPlayer() && message.ActionKind != P2pCombatActionKind.PowerStun)
+                if (isFromThisRemotePlayer && message.ActionKind != P2pCombatActionKind.PowerStun)
                 {
                     presentation?.TryPresent(new P2pPresentationRequest(
                         message.ActionId,
@@ -217,28 +225,29 @@ public sealed class P2pCombatReplicator : MonoBehaviour
                 break;
 
             case P2pCombatMessageKind.InteractionRequest:
-                ResolveIncomingInteraction(message);
+                if (isForLocalPlayer)
+                    ResolveIncomingInteraction(message, senderClientId);
                 break;
 
             case P2pCombatMessageKind.InteractionResult:
-                if (IsRemoteHumanPlayer() && message.Resolution == P2pCombatResolution.Block)
+                if (isFromThisRemotePlayer && message.Resolution == P2pCombatResolution.Block)
                 {
                     presentation?.TryPresent(new P2pPresentationRequest(
                         message.ActionId,
                         P2pPresentationAction.Block,
                         message.Origin));
                 }
-                if (!IsRetained(message.ActionId))
+                if (isForLocalPlayer && !IsRetained(message.ActionId))
                     ReceiveInteractionResult(message);
                 break;
 
             case P2pCombatMessageKind.ActionCancel:
-                if (IsRemoteHumanPlayer())
+                if (isFromThisRemotePlayer)
                     presentation?.TryCancel(message.ActionId);
                 break;
 
             case P2pCombatMessageKind.GrabStarted:
-                if (IsLocalHumanPlayer() && message.ActionKind == P2pCombatActionKind.Grab)
+                if (isForLocalPlayer && message.ActionKind == P2pCombatActionKind.Grab)
                 {
                     combat.BeginP2pGrabWithRemote();
                     activeGrabId = message.ActionId;
@@ -246,7 +255,7 @@ public sealed class P2pCombatReplicator : MonoBehaviour
                 break;
 
             case P2pCombatMessageKind.GrabReleased:
-                if (IsLocalHumanPlayer() && message.ActionId == activeGrabId)
+                if (isForLocalPlayer && message.ActionId == activeGrabId)
                 {
                     combat.ReleaseP2pGrabWithRemote();
                     activeGrabId = 0;
@@ -255,7 +264,7 @@ public sealed class P2pCombatReplicator : MonoBehaviour
         }
     }
 
-    private void ResolveIncomingInteraction(P2pCombatMessage request)
+    private void ResolveIncomingInteraction(P2pCombatMessage request, ulong attackerClientId)
     {
         if (!IsLocalHumanPlayer())
             return;
@@ -286,7 +295,8 @@ public sealed class P2pCombatReplicator : MonoBehaviour
             BallAuthorityController.Current.TryResolveTackle(
                 request.ActionId,
                 request.ActionKind,
-                resolution);
+                resolution,
+                attackerClientId);
         }
 
         if (request.ActionKind == P2pCombatActionKind.Grab && resolution == P2pCombatResolution.Hit)
@@ -315,7 +325,27 @@ public sealed class P2pCombatReplicator : MonoBehaviour
 
     private bool Send(P2pCombatMessage message)
     {
-        return P2pCombatCodec.TryEncode(message, out byte[] payload) && connection != null && connection.TrySendCombat(payload);
+        return P2pCombatCodec.TryEncode(message, out byte[] payload)
+            && connections != null
+            && connections.TryBroadcast(P2pGameplayChannel.Combat, payload);
+    }
+
+    private bool SendTo(ulong peerClientId, P2pCombatMessage message)
+    {
+        return P2pCombatCodec.TryEncode(message, out byte[] payload)
+            && connections != null
+            && connections.TrySendTo(peerClientId, P2pGameplayChannel.Combat, payload);
+    }
+
+    private static bool TryGetOwnerClientId(Component component, out ulong ownerClientId)
+    {
+        ownerClientId = 0;
+        NetworkObject networkObject = component != null ? component.GetComponentInParent<NetworkObject>() : null;
+        if (networkObject == null || !networkObject.IsSpawned)
+            return false;
+
+        ownerClientId = networkObject.OwnerClientId;
+        return true;
     }
 
     private bool IsHumanMatchPlayer()
@@ -383,5 +413,6 @@ public sealed class P2pCombatReplicator : MonoBehaviour
         public float ContactAt;
         public float ExpiresAt;
         public bool RequestSent;
+        public ulong TargetClientId;
     }
 }

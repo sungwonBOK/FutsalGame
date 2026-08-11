@@ -1,8 +1,17 @@
 public static class P2pMatchStartPolicy
 {
-    public static bool CanStart(int connectedPlayerCount, bool isDirectP2pReady)
+    public const int MaximumPlayers = 6;
+
+    public static bool CanStart(
+        int connectedPlayerCount,
+        bool areAllNonHostPlayersReady,
+        bool isDirectP2pMeshReady)
     {
-        return connectedPlayerCount != 2 || isDirectP2pReady;
+        if (connectedPlayerCount < 1 || connectedPlayerCount > MaximumPlayers)
+            return false;
+
+        return connectedPlayerCount == 1
+            || (areAllNonHostPlayersReady && isDirectP2pMeshReady);
     }
 
     public static bool CanStart(
@@ -10,6 +19,9 @@ public static class P2pMatchStartPolicy
         P2pGameplayReadiness readiness,
         P2pGameplayChannel openChannels)
     {
-        return connectedPlayerCount != 2 || readiness.IsReady(openChannels);
+        return CanStart(
+            connectedPlayerCount,
+            areAllNonHostPlayersReady: true,
+            isDirectP2pMeshReady: readiness.IsReady(openChannels));
     }
 }

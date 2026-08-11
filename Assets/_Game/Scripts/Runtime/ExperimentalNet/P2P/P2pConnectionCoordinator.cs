@@ -40,7 +40,8 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
     private int receivedCandidateCount;
     private int appliedCandidateCount;
 
-    public static P2pConnectionCoordinator Current { get; private set; }
+    /// <summary>The NGO client ID of the one remote peer owned by this coordinator.</summary>
+    public ulong RemoteClientId { get; private set; }
     public P2pConnectionState State { get; private set; } = P2pConnectionState.Idle;
     public bool IsReady => State == P2pConnectionState.Ready;
     public bool IsCombatReady => IsReady && combatChannel != null && combatChannel.ReadyState == RTCDataChannelState.Open;
@@ -71,9 +72,17 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
     public event Action<byte[]> BallStateReceived;
     public event Action<byte[]> BallEventReceived;
 
-    private void Awake()
+    /// <summary>
+    /// Assigns this component to one remote peer before negotiation begins. A
+    /// mesh registry owns component creation and never reuses an active
+    /// coordinator for another peer.
+    /// </summary>
+    public void ConfigureRemotePeer(ulong remoteClientId)
     {
-        Current = this;
+        if (peerConnection != null)
+            throw new InvalidOperationException("A P2P coordinator cannot change remote peers while connected.");
+
+        RemoteClientId = remoteClientId;
     }
 
     public void Begin(bool shouldCreateOffer)
@@ -535,8 +544,6 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
     private void OnDestroy()
     {
         ShutdownInternal(false);
-        if (Current == this)
-            Current = null;
     }
 
     [Serializable]

@@ -41,7 +41,7 @@ public class LobbyController : NetworkBehaviour
     [SerializeField] private string ipAddress = "127.0.0.1";
     [SerializeField] private ushort port = 7777;
     [Tooltip("호스트를 제외한 최대 접속 인원. Relay 방 크기를 정한다.")]
-    [SerializeField] private int maxConnections = 9;
+    [SerializeField] private int maxConnections = MpsRoomDefinition.MaximumPlayers;
 
     [Header("로비 기본값")]
     [Tooltip("호스트 시작 시 팀당 기본 슬롯 수.")]
@@ -51,6 +51,10 @@ public class LobbyController : NetworkBehaviour
 
     // 동기화되는 슬롯 목록(호스트가 편집).
     private readonly NetworkList<TeamSlot> slots = new NetworkList<TeamSlot>();
+    private readonly NetworkList<ulong> p2pParticipantClientIds = new NetworkList<ulong>();
+    private readonly NetworkList<ulong> p2pReadyClientIds = new NetworkList<ulong>();
+    private readonly NetworkList<ulong> p2pMeshReadyClientIds = new NetworkList<ulong>();
+    private readonly NetworkList<ulong> p2pRecoveryApprovedClientIds = new NetworkList<ulong>();
     private readonly NetworkVariable<bool> matchStarted = new NetworkVariable<bool>(false);
 
     private Screen screen = Screen.Main;
@@ -63,11 +67,11 @@ public class LobbyController : NetworkBehaviour
     private bool isConnecting;
     private string mpsRoomName = "Futsal Room";
     private MpsRoomDefinition[] mpsRooms = Array.Empty<MpsRoomDefinition>();
-    private MpsSessionRoomService mpsSessionRooms;
+    private IRoomService mpsSessionRooms;
     private bool usesMpsRelaySession;
-    private P2pLobbySignalRelay p2pSignalRelay;
-    private P2pConnectionCoordinator p2pConnection;
-    private string p2pStatusMessage = "Waiting for a second player.";
+    private IPeerSignalingTransport p2pSignalRelay;
+    private P2pPeerConnectionRegistry p2pConnections;
+    private string p2pStatusMessage = "Waiting for P2P mesh participants.";
     private readonly P2pReconnectSchedule p2pReconnectSchedule = new P2pReconnectSchedule();
     private P2pSessionStatus p2pSessionStatus = P2pSessionStatus.Preparing;
     private Coroutine p2pReconnectRoutine;
@@ -85,9 +89,13 @@ public class LobbyController : NetworkBehaviour
                         slots.Add(new TeamSlot { team = t, type = Occupant.Empty, clientId = 0 });
             }
             NetworkManager.OnClientDisconnectCallback += HandleClientDisconnect;
+            RefreshP2pParticipants();
         }
 
         matchStarted.OnValueChanged += HandleMatchStartedChanged;
+        p2pParticipantClientIds.OnListChanged += HandleP2pParticipantsChanged;
+        p2pRecoveryApprovedClientIds.OnListChanged += HandleP2pRecoveryApprovalsChanged;
+        RefreshP2pRecoveryApprovals();
         if (MpsNetworkingModePolicy.RequiresDirectP2p(usesMpsRelaySession))
             StartP2pSignaling();
         else
@@ -107,6 +115,9 @@ public class LobbyController : NetworkBehaviour
             NetworkManager.OnClientDisconnectCallback -= HandleClientDisconnect;
 
         matchStarted.OnValueChanged -= HandleMatchStartedChanged;
+        p2pParticipantClientIds.OnListChanged -= HandleP2pParticipantsChanged;
+        p2pRecoveryApprovedClientIds.OnListChanged -= HandleP2pRecoveryApprovalsChanged;
+        P2pPeerRecoveryApprovals.SetApprovedPeerClientIds(null);
         StopP2pSignaling();
     }
 
@@ -116,19 +127,15 @@ public class LobbyController : NetworkBehaviour
         p2pSignalRelay.SignalReceived += HandleP2pSignal;
         p2pSignalRelay.Start();
 
-        p2pConnection = gameObject.AddComponent<P2pConnectionCoordinator>();
-        p2pConnection.SignalReady += SendP2pSignal;
-        p2pConnection.StateChanged += HandleP2pStateChanged;
-        p2pConnection.GameplayChannelsChanged += HandleP2pGameplayChannelsChanged;
+        p2pConnections = gameObject.AddComponent<P2pPeerConnectionRegistry>();
+        p2pConnections.SignalReady += SendP2pSignal;
+        p2pConnections.PeerStateChanged += HandleP2pStateChanged;
+        p2pConnections.GameplayReadinessChanged += UpdateP2pSessionStatus;
 
         if (IsServer)
-        {
             NetworkManager.OnClientConnectedCallback += HandleP2pClientConnected;
-            return;
-        }
 
-        p2pConnection.Begin(false);
-        SendP2pReady();
+        ConfigureP2pPeers();
     }
 
     private void StopP2pSignaling()
@@ -149,54 +156,190 @@ public class LobbyController : NetworkBehaviour
             p2pSignalRelay = null;
         }
 
-        if (p2pConnection != null)
+        if (p2pConnections != null)
         {
-            p2pConnection.SignalReady -= SendP2pSignal;
-            p2pConnection.StateChanged -= HandleP2pStateChanged;
-            p2pConnection.GameplayChannelsChanged -= HandleP2pGameplayChannelsChanged;
-            p2pConnection.Shutdown();
-            Destroy(p2pConnection);
-            p2pConnection = null;
+            p2pConnections.SignalReady -= SendP2pSignal;
+            p2pConnections.PeerStateChanged -= HandleP2pStateChanged;
+            p2pConnections.GameplayReadinessChanged -= UpdateP2pSessionStatus;
+            p2pConnections.Shutdown();
+            Destroy(p2pConnections);
+            p2pConnections = null;
         }
     }
 
     private void HandleP2pClientConnected(ulong clientId)
     {
-        // The client sends Ready only after its signal receiver is registered.
-        p2pStatusMessage = "Waiting for the guest P2P setup to become ready.";
+        RefreshP2pParticipants();
+        p2pStatusMessage = "Waiting for the P2P mesh to include the new participant.";
     }
 
-    private void SendP2pReady()
+    private void HandleP2pParticipantsChanged(NetworkListEvent<ulong> changeEvent)
     {
-        if (!P2pSignalMessage.TryCreate(P2pSignalKind.Ready, "ready", out P2pSignalMessage ready))
-        {
-            p2pStatusMessage = "Direct P2P setup failed: the ready message was invalid.";
+        ConfigureP2pPeers();
+    }
+
+    private void ConfigureP2pPeers()
+    {
+        if (p2pConnections == null || NetworkManager == null || !NetworkManager.IsListening)
             return;
+
+        List<ulong> peerClientIds = new List<ulong>(p2pParticipantClientIds.Count);
+        for (int i = 0; i < p2pParticipantClientIds.Count; i++)
+            peerClientIds.Add(p2pParticipantClientIds[i]);
+
+        p2pConnections.Configure(NetworkManager.LocalClientId, peerClientIds);
+        p2pConnections.SendReadyForRequiredPeers();
+        UpdateP2pSessionStatus();
+    }
+
+    private void RefreshP2pParticipants()
+    {
+        if (!IsServer || NetworkManager == null)
+            return;
+
+        p2pParticipantClientIds.Clear();
+        foreach (ulong clientId in SortedConnectedClients())
+            p2pParticipantClientIds.Add(clientId);
+
+        for (int i = p2pMeshReadyClientIds.Count - 1; i >= 0; i--)
+        {
+            if (!p2pParticipantClientIds.Contains(p2pMeshReadyClientIds[i]))
+                p2pMeshReadyClientIds.RemoveAt(i);
         }
 
-        if (!p2pSignalRelay.TrySend(ready, out string error))
+        for (int i = p2pRecoveryApprovedClientIds.Count - 1; i >= 0; i--)
+        {
+            if (!p2pParticipantClientIds.Contains(p2pRecoveryApprovedClientIds[i]))
+                p2pRecoveryApprovedClientIds.RemoveAt(i);
+        }
+    }
+
+    [Rpc(SendTo.Server)]
+    private void RequestP2pReadyRpc(bool ready, RpcParams rpcParams = default)
+    {
+        if (!IsServer || matchStarted.Value)
+            return;
+
+        ulong clientId = rpcParams.Receive.SenderClientId;
+        if (clientId == NetworkManager.ServerClientId || !p2pParticipantClientIds.Contains(clientId))
+            return;
+
+        SetP2pReady(clientId, ready);
+    }
+
+    private void SetP2pReady(ulong clientId, bool ready)
+    {
+        int index = p2pReadyClientIds.IndexOf(clientId);
+        if (ready && index < 0)
+            p2pReadyClientIds.Add(clientId);
+        else if (!ready && index >= 0)
+            p2pReadyClientIds.RemoveAt(index);
+    }
+
+    private bool AreAllNonHostP2pParticipantsReady()
+    {
+        foreach (ulong clientId in p2pParticipantClientIds)
+        {
+            if (clientId != NetworkManager.ServerClientId && !p2pReadyClientIds.Contains(clientId))
+                return false;
+        }
+
+        return true;
+    }
+
+    private bool IsLocalP2pReady()
+    {
+        return NetworkManager != null && p2pReadyClientIds.Contains(NetworkManager.LocalClientId);
+    }
+
+    [Rpc(SendTo.Server)]
+    private void ReportP2pMeshReadinessRpc(bool isReady, RpcParams rpcParams = default)
+    {
+        if (!IsServer || !p2pParticipantClientIds.Contains(rpcParams.Receive.SenderClientId))
+            return;
+
+        SetP2pMeshReady(rpcParams.Receive.SenderClientId, isReady);
+        if (!isReady)
+            SetP2pRecoveryApproved(rpcParams.Receive.SenderClientId, false);
+
+        TryApproveRecoveredParticipants();
+    }
+
+    private void SetP2pMeshReady(ulong clientId, bool isReady)
+    {
+        int index = p2pMeshReadyClientIds.IndexOf(clientId);
+        if (isReady && index < 0)
+            p2pMeshReadyClientIds.Add(clientId);
+        else if (!isReady && index >= 0)
+            p2pMeshReadyClientIds.RemoveAt(index);
+    }
+
+    private bool AreAllP2pParticipantsMeshReady()
+    {
+        foreach (ulong clientId in p2pParticipantClientIds)
+        {
+            if (!p2pMeshReadyClientIds.Contains(clientId))
+                return false;
+        }
+
+        return true;
+    }
+
+    private void SetP2pRecoveryApproved(ulong clientId, bool isApproved)
+    {
+        int index = p2pRecoveryApprovedClientIds.IndexOf(clientId);
+        if (isApproved && index < 0)
+            p2pRecoveryApprovedClientIds.Add(clientId);
+        else if (!isApproved && index >= 0)
+            p2pRecoveryApprovedClientIds.RemoveAt(index);
+    }
+
+    private void HandleP2pRecoveryApprovalsChanged(NetworkListEvent<ulong> changeEvent)
+    {
+        RefreshP2pRecoveryApprovals();
+    }
+
+    private void RefreshP2pRecoveryApprovals()
+    {
+        List<ulong> approvedClientIds = new List<ulong>(p2pRecoveryApprovedClientIds.Count);
+        for (int i = 0; i < p2pRecoveryApprovedClientIds.Count; i++)
+            approvedClientIds.Add(p2pRecoveryApprovedClientIds[i]);
+
+        P2pPeerRecoveryApprovals.SetApprovedPeerClientIds(approvedClientIds);
+    }
+
+    private void TryApproveRecoveredParticipants()
+    {
+        if (!IsServer || !matchStarted.Value || !AreAllP2pParticipantsMeshReady())
+            return;
+
+        foreach (ulong clientId in p2pParticipantClientIds)
+        {
+            if (clientId != NetworkManager.ServerClientId)
+                SetP2pRecoveryApproved(clientId, true);
+        }
+    }
+
+    private void HandleP2pSignal(P2pPeerSignal signal)
+    {
+        if (p2pConnections == null || !p2pConnections.ReceiveSignal(signal))
+            p2pStatusMessage = "Direct P2P setup received an unexpected peer signal.";
+    }
+
+    private void SendP2pSignal(P2pPeerSignal signal)
+    {
+        if (!p2pSignalRelay.TrySend(signal, out string error))
             p2pStatusMessage = "Direct P2P setup failed: " + error;
     }
 
-    private void HandleP2pSignal(P2pSignalMessage message)
+    private void HandleP2pStateChanged(ulong peerClientId, P2pConnectionState state, string message)
     {
-        if (message.Kind == P2pSignalKind.Ready && IsServer)
+        if (IsServer && P2pPeerRecoveryPolicy.ShouldFreeze(state))
         {
-            p2pConnection.Begin(true);
-            return;
+            SetP2pMeshReady(peerClientId, false);
+            SetP2pRecoveryApproved(peerClientId, false);
         }
 
-        p2pConnection.ReceiveSignal(message);
-    }
-
-    private void SendP2pSignal(P2pSignalMessage message)
-    {
-        if (!p2pSignalRelay.TrySend(message, out string error))
-            p2pStatusMessage = "Direct P2P setup failed: " + error;
-    }
-
-    private void HandleP2pStateChanged(P2pConnectionState state, string message)
-    {
         if (state == P2pConnectionState.Ready)
         {
             UpdateP2pSessionStatus();
@@ -206,7 +349,7 @@ public class LobbyController : NetworkBehaviour
         if (state == P2pConnectionState.Failed)
         {
             SetP2pSessionStatus(P2pSessionStatus.PeerDisconnected);
-            BeginGuestReconnect();
+            BeginMeshReconnect();
             return;
         }
 
@@ -219,15 +362,17 @@ public class LobbyController : NetworkBehaviour
         p2pStatusMessage = message;
     }
 
-    private void HandleP2pGameplayChannelsChanged(P2pGameplayChannel channels)
-    {
-        UpdateP2pSessionStatus();
-    }
-
     private void UpdateP2pSessionStatus()
     {
-        if (p2pConnection != null && p2pConnection.IsGameplayReady)
+        bool isLocallyMeshReady = p2pConnections != null && p2pConnections.IsGameplayReady;
+        if (IsServer)
+            SetP2pMeshReady(NetworkManager.LocalClientId, isLocallyMeshReady);
+        else if (NetworkManager != null && NetworkManager.IsListening)
+            ReportP2pMeshReadinessRpc(isLocallyMeshReady);
+
+        if (isLocallyMeshReady && AreAllP2pParticipantsMeshReady())
         {
+            TryApproveRecoveredParticipants();
             p2pReconnectSchedule.Reset();
             SetP2pSessionStatus(P2pSessionStatus.Ready);
             return;
@@ -242,9 +387,9 @@ public class LobbyController : NetworkBehaviour
         p2pStatusMessage = P2pSessionStatusText.For(status);
     }
 
-    private void BeginGuestReconnect()
+    private void BeginMeshReconnect()
     {
-        if (IsServer || p2pReconnectRoutine != null)
+        if (p2pReconnectRoutine != null)
             return;
 
         if (NetworkManager == null || !NetworkManager.IsListening)
@@ -253,12 +398,12 @@ public class LobbyController : NetworkBehaviour
             return;
         }
 
-        p2pReconnectRoutine = StartCoroutine(ReconnectGuestP2p());
+        p2pReconnectRoutine = StartCoroutine(ReconnectMeshP2p());
     }
 
-    private IEnumerator ReconnectGuestP2p()
+    private IEnumerator ReconnectMeshP2p()
     {
-        while (p2pConnection != null && !p2pConnection.IsGameplayReady)
+        while (p2pConnections != null && !p2pConnections.IsGameplayReady)
         {
             SetP2pSessionStatus(P2pSessionStatus.Reconnecting);
             yield return new WaitForSeconds(p2pReconnectSchedule.NextDelaySeconds());
@@ -270,8 +415,7 @@ public class LobbyController : NetworkBehaviour
             }
 
             p2pReconnectSchedule.RecordAttempt();
-            p2pConnection.Begin(false);
-            SendP2pReady();
+            p2pConnections.SendReadyForRequiredPeers();
         }
 
         p2pReconnectRoutine = null;
@@ -311,6 +455,11 @@ public class LobbyController : NetworkBehaviour
                 slots[i] = s;
             }
         }
+
+        SetP2pReady(clientId, false);
+        SetP2pMeshReady(clientId, false);
+        SetP2pRecoveryApproved(clientId, false);
+        RefreshP2pParticipants();
     }
 
     // ---------------- 서버(호스트) 슬롯 편집 ----------------
@@ -400,9 +549,12 @@ public class LobbyController : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        bool isDirectP2pReady = p2pConnection != null && p2pConnection.IsGameplayReady;
+        bool isDirectP2pReady = AreAllP2pParticipantsMeshReady();
         if (MpsNetworkingModePolicy.RequiresDirectP2p(usesMpsRelaySession) &&
-            !P2pMatchStartPolicy.CanStart(NetworkManager.ConnectedClientsIds.Count, isDirectP2pReady))
+            !P2pMatchStartPolicy.CanStart(
+                NetworkManager.ConnectedClientsIds.Count,
+                AreAllNonHostP2pParticipantsReady(),
+                isDirectP2pReady))
         {
             SetP2pSessionStatus(P2pSessionStatus.Preparing);
             return;
@@ -714,7 +866,7 @@ public class LobbyController : NetworkBehaviour
         }
     }
 
-    private MpsSessionRoomService GetMpsSessionRooms()
+    private IRoomService GetMpsSessionRooms()
     {
         if (mpsSessionRooms != null)
             return mpsSessionRooms;
@@ -847,7 +999,9 @@ public class LobbyController : NetworkBehaviour
         }
         else
         {
-            GUILayout.Label("호스트가 게임을 시작하기를 기다리는 중...");
+            bool isReady = IsLocalP2pReady();
+            if (GUILayout.Button(isReady ? "P2P 준비 완료 (취소)" : "P2P 준비", GUILayout.Height(40)))
+                RequestP2pReadyRpc(!isReady);
         }
         if (GUILayout.Button("나가기", GUILayout.Width(120), GUILayout.Height(40)))
             nm.Shutdown();

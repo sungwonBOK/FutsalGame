@@ -35,6 +35,14 @@ public readonly struct P2pSignalMessage
 
 public static class P2pOfferSelector
 {
+    public static bool IsLocalOfferer(ulong localClientId, ulong remoteClientId)
+    {
+        if (localClientId == remoteClientId)
+            throw new ArgumentException("Distinct peer IDs are required.", nameof(remoteClientId));
+
+        return localClientId < remoteClientId;
+    }
+
     public static bool IsLocalOfferer(string localPeerId, string remotePeerId)
     {
         if (string.IsNullOrEmpty(localPeerId))

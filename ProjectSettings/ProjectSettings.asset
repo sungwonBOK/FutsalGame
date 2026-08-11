@@ -929,11 +929,11 @@ PlayerSettings:
   activeInputHandler: 1
   windowsGamepadBackendHint: 0
   enableDirectStorage: 0
-  cloudProjectId: 079fc7ad-5737-4388-a310-ad9382bfd35b
+  cloudProjectId: 4c818dd3-938b-49e9-8d0d-e4ec13ff0302
   framebufferDepthMemorylessMode: 0
   qualitySettingsNames: []
-  projectName: FutsalGame (3)
-  organizationId: seowoo020405
+  projectName: FutsalGame
+  organizationId: boksungwon
   cloudEnabled: 0
   legacyClampBlendShapeWeights: 0
   hmiLoadingImage: {fileID: 0}

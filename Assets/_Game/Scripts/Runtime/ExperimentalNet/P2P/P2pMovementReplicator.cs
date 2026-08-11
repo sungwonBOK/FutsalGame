@@ -1,8 +1,8 @@
 using UnityEngine;
 
 /// <summary>
-/// Routes only 1:1 human-player movement through the direct snapshot channel.
-/// Ball, combat, match state, and AI retain their existing NGO paths.
+/// Routes human-player movement through the direct mesh snapshot channel.
+/// Each remote player accepts packets only from the peer that owns it.
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class P2pMovementReplicator : MonoBehaviour
@@ -15,15 +15,24 @@ public sealed class P2pMovementReplicator : MonoBehaviour
     private NetworkPlayerAgent playerAgent;
     private ClientNetworkTransform ngoTransform;
     private Rigidbody body;
-    private P2pConnectionCoordinator connection;
+    private P2pPeerConnectionRegistry connections;
     private ushort nextSequence;
     private float nextSnapshotAt;
+    private bool isFrozen;
+    private bool hasLastReceivedPose;
+    private Vector3 lastReceivedPosition;
+    private float lastReceivedYawDegrees;
 
     private void Awake()
     {
         playerAgent = GetComponent<NetworkPlayerAgent>();
         ngoTransform = GetComponent<ClientNetworkTransform>();
         body = GetComponent<Rigidbody>();
+    }
+
+    private void OnEnable()
+    {
+        P2pPeerRecoveryApprovals.Changed += HandleRecoveryApprovalsChanged;
     }
 
     private void Update()
@@ -44,11 +53,17 @@ public sealed class P2pMovementReplicator : MonoBehaviour
             transform.eulerAngles.y);
 
         if (P2pSnapshotCodec.TryEncode(snapshot, out byte[] payload))
-            connection.TrySendSnapshot(payload);
+            connections.TryBroadcast(P2pGameplayChannel.Snapshot, payload);
     }
 
     private void FixedUpdate()
     {
+        if (isFrozen)
+        {
+            ApplyFrozenPose();
+            return;
+        }
+
         if (!ShouldUseDirectP2p() || !IsRemoteHumanPlayer() || !remoteSnapshots.HasSnapshot)
             return;
 
@@ -73,44 +88,129 @@ public sealed class P2pMovementReplicator : MonoBehaviour
 
     private void OnDisable()
     {
-        if (connection != null)
-            connection.SnapshotReceived -= ReceiveSnapshot;
+        P2pPeerRecoveryApprovals.Changed -= HandleRecoveryApprovalsChanged;
+        if (connections != null)
+        {
+            connections.SnapshotReceived -= ReceiveSnapshot;
+            connections.PeerStateChanged -= HandlePeerStateChanged;
+            connections.GameplayReadinessChanged -= HandleGameplayReadinessChanged;
+        }
 
-        connection = null;
+        connections = null;
         if (ngoTransform != null)
             ngoTransform.enabled = true;
     }
 
     private void RefreshConnection()
     {
-        P2pConnectionCoordinator current = P2pConnectionCoordinator.Current;
-        if (connection == current)
+        P2pPeerConnectionRegistry current = P2pPeerConnectionRegistry.Current;
+        if (connections == current)
             return;
 
-        if (connection != null)
-            connection.SnapshotReceived -= ReceiveSnapshot;
+        if (connections != null)
+        {
+            connections.SnapshotReceived -= ReceiveSnapshot;
+            connections.PeerStateChanged -= HandlePeerStateChanged;
+            connections.GameplayReadinessChanged -= HandleGameplayReadinessChanged;
+        }
 
-        connection = current;
+        connections = current;
         remoteSnapshots.Clear();
 
-        if (connection != null)
-            connection.SnapshotReceived += ReceiveSnapshot;
+        if (connections != null)
+        {
+            connections.SnapshotReceived += ReceiveSnapshot;
+            connections.PeerStateChanged += HandlePeerStateChanged;
+            connections.GameplayReadinessChanged += HandleGameplayReadinessChanged;
+        }
     }
 
-    private void ReceiveSnapshot(byte[] payload)
+    private void ReceiveSnapshot(ulong senderClientId, byte[] payload)
     {
-        if (!IsRemoteHumanPlayer() || !P2pSnapshotCodec.TryDecode(payload, out P2pPlayerSnapshot snapshot))
+        if (!IsRemoteHumanPlayer()
+            || playerAgent.OwnerClientId != senderClientId
+            || !P2pSnapshotCodec.TryDecode(payload, out P2pPlayerSnapshot snapshot))
             return;
 
         remoteSnapshots.TryAccept(snapshot);
+        hasLastReceivedPose = true;
+        lastReceivedPosition = snapshot.Position;
+        lastReceivedYawDegrees = snapshot.YawDegrees;
+    }
+
+    private void HandlePeerStateChanged(ulong peerClientId, P2pConnectionState state, string message)
+    {
+        if (!IsRemoteHumanPlayer() || playerAgent.OwnerClientId != peerClientId)
+            return;
+
+        if (P2pPeerRecoveryPolicy.ShouldFreeze(state))
+            FreezeAtLastReceivedPose();
+        else if (P2pPeerRecoveryPolicy.CanResume(state, CanResumePeer()))
+            ResumeFromFrozenPose();
+    }
+
+    private void HandleGameplayReadinessChanged()
+    {
+        if (isFrozen && CanResumePeer())
+            ResumeFromFrozenPose();
+    }
+
+    private void HandleRecoveryApprovalsChanged()
+    {
+        if (isFrozen && CanResumePeer())
+            ResumeFromFrozenPose();
+    }
+
+    private bool CanResumePeer()
+    {
+        return connections != null
+            && connections.IsGameplayReady
+            && playerAgent != null
+            && P2pPeerRecoveryApprovals.IsApproved(playerAgent.OwnerClientId);
+    }
+
+    private void FreezeAtLastReceivedPose()
+    {
+        isFrozen = true;
+        if (!hasLastReceivedPose)
+        {
+            lastReceivedPosition = transform.position;
+            lastReceivedYawDegrees = transform.eulerAngles.y;
+        }
+
+        ApplyFrozenPose();
+    }
+
+    private void ResumeFromFrozenPose()
+    {
+        if (!isFrozen)
+            return;
+
+        isFrozen = false;
+        ApplyFrozenPose();
+    }
+
+    private void ApplyFrozenPose()
+    {
+        Quaternion rotation = Quaternion.Euler(0f, lastReceivedYawDegrees, 0f);
+        if (body != null && !body.isKinematic)
+        {
+            body.position = lastReceivedPosition;
+            body.rotation = rotation;
+            body.linearVelocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+            return;
+        }
+
+        transform.SetPositionAndRotation(lastReceivedPosition, rotation);
     }
 
     private bool ShouldUseDirectP2p()
     {
         return playerAgent != null
             && playerAgent.IsSpawned
-            && connection != null
-            && connection.IsReady
+            && connections != null
+            && connections.IsGameplayReady
             && (playerAgent.IsLocalHumanPlayer || IsRemoteHumanPlayer());
     }
 
