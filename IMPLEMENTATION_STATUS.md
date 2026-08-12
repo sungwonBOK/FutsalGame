@@ -15,6 +15,13 @@
 - Verification: Unity imported the new scripts with no new Console errors. Focused control-plane/mesh/recovery contracts passed `18/18`, and the full EditMode suite passed `168/168`; the only compile warning remains the pre-existing `FindObjectsOfType` obsolete-API warning in `CombatController`. A single Editor Play Mode attempt stalled during Unity's post-test synchronous recompile/domain-reload transition without a gameplay exception, so it was stopped and is not runtime proof. Staged 2/3/6-client mesh, disconnect/reconnect, and score/time/end control-plane Play Mode proof are still required.
 - A Windows development build is available at `Builds/p2p-runtime-validation-6mesh/FutsalGame.exe` (Unity build errors `0`). The build reports that Unity Services needs a linked cloud project; although `cloudProjectId` is populated, `cloudEnabled` is currently `0`, so a live MPS public-room validation requires the project owner to confirm the Editor/Dashboard Services linkage first.
 
+## 2026-08-12 Shared one-to-six-player MPS P2P test room
+
+- The Online screen now has a fixed shared test flow: one Editor selects `Host shared 1-6 player test room`; every other Editor selects `Join shared 1-6 player test room`. The room uses MPS Relay, capacity six, the current build key, and a second public indexed property; the normal public-room browser excludes that marker.
+- A single connected host may start without a remote WebRTC peer or a `Game ready` acknowledgement. With two through six connected players, the existing direct-P2P mesh and every participant's `Game ready` acknowledgement remain required before the Host can start. Seven connected players are rejected at the start gate, and the MPS capacity prevents a seventh normal join.
+- This change does not alter MPS/Relay configuration, ICE/STUN settings, scenes, prefabs, or the legacy public-room and join-code flows. The one-player bypass is scoped only to the shared test-room flow. It adds no automatic test-room creation for a guest: a guest with no active host receives a clear unavailable-room error instead of creating a second room.
+- Manual Editor validation is still required and is not claimed here: (1) host-alone starts without a ready button, (2) two Editors both reach P2P ready then both choose `Game ready` before Host start, and (3) a six-Editor room refuses a seventh join and retains the two-through-six start gate.
+
 ## 2026-08-11 P2P room auto-connect and game-ready gate
 
 - An addressed `Ready` signal that reaches a participant before its peer registry has received the participant list is retained only until that peer coordinator is created. Offer/answer/ICE messages are still rejected unless their coordinator already exists.

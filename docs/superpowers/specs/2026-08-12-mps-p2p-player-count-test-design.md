@@ -14,9 +14,9 @@ Provide one shared Editor test room for one to six players without room-name ent
 
 ## Test Room Flow
 
-1. The host selects `Create 1-6 player test room`. The service creates a public, six-player MPS Relay session with the current application-version property and an indexed test-room property.
+1. The host selects `Create 1-6 player test room`. The service creates a public, six-player MPS Relay session with the current application-version property and an indexed test-room property. The normal public-room browser excludes that marker.
 2. Each guest selects `Join 1-6 player test room`. The service searches only compatible, non-full test rooms and joins the most recently updated one.
-3. The first host can start alone: no remote peer is required, P2P signaling starts but the mesh has zero required peers, and start policy permits the one-player case without a Game ready acknowledgement.
+3. The first host can start alone: no remote peer is required, P2P signaling starts but the mesh has zero required peers, and start policy permits the one-player case without a Game ready acknowledgement. This exception is scoped to the shared player-count test room.
 4. With two to six connected players, every player must report a complete direct-P2P mesh and toggle Game ready before the host can start.
 5. A seventh player cannot join because the MPS session capacity is six.
 

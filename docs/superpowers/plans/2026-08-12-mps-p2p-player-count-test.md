@@ -29,7 +29,7 @@
 - Produces `P2pPlayerCountPolicy.RequiresDirectP2p(int connectedPlayerCount)` and `P2pPlayerCountPolicy.RequiresGameReady(int connectedPlayerCount)`.
 - `LobbyController.SvStartMatch()` uses these rules before calling `P2pMatchStartPolicy`.
 
-- [ ] **Step 1: Write failing player-count tests**
+- [x] **Step 1: Write failing player-count tests**
 
 ```csharp
 Assert.That(P2pPlayerCountPolicy.RequiresDirectP2p(1), Is.False);
@@ -38,11 +38,11 @@ Assert.That(P2pPlayerCountPolicy.RequiresDirectP2p(6), Is.True);
 Assert.That(P2pPlayerCountPolicy.IsSupported(7), Is.False);
 ```
 
-- [ ] **Step 2: Run the focused EditMode test and observe the missing-type failure**
+- [x] **Step 2: Run the focused EditMode test and observe the missing-type failure**
 
 Run: Unity Test Runner EditMode filter `P2pPlayerCountPolicyTests`.
 
-- [ ] **Step 3: Add the minimal policy and use it at the start gate**
+- [x] **Step 3: Add the minimal policy and use it at the start gate**
 
 ```csharp
 if (P2pPlayerCountPolicy.RequiresDirectP2p(connectedPlayerCount) && !isDirectP2pReady)
@@ -51,7 +51,7 @@ if (P2pPlayerCountPolicy.RequiresGameReady(connectedPlayerCount) && !areAllPlaye
     return;
 ```
 
-- [ ] **Step 4: Re-run focused and full EditMode tests**
+- [x] **Step 4: Re-run focused and full EditMode tests**
 
 ### Task 2: Add a six-player shared MPS test room
 
@@ -65,18 +65,18 @@ if (P2pPlayerCountPolicy.RequiresGameReady(connectedPlayerCount) && !areAllPlaye
 - Produces `Task<MpsRoomDefinition> FindPlayerCountTestRoomAsync()` and `Task JoinPlayerCountTestRoomAsync()`.
 - Test room sessions include a public indexed property unique to this test flow and use `MpsRoomDefinition.MaximumPlayers`.
 
-- [ ] **Step 1: Write failing contract tests**
+- [x] **Step 1: Write failing contract tests**
 
 ```csharp
 Assert.That(typeof(IRoomService).GetMethod("CreatePlayerCountTestRoomAsync"), Is.Not.Null);
 Assert.That(typeof(IRoomService).GetMethod("JoinPlayerCountTestRoomAsync"), Is.Not.Null);
 ```
 
-- [ ] **Step 2: Run the focused EditMode test and observe the missing-method failure**
+- [x] **Step 2: Run the focused EditMode test and observe the missing-method failure**
 
 Run: Unity Test Runner EditMode filter `RoomAndSignalingContractTests`.
 
-- [ ] **Step 3: Implement the MPS test-room methods**
+- [x] **Step 3: Implement the MPS test-room methods**
 
 ```csharp
 new SessionProperty(PlayerCountTestPropertyValue, VisibilityPropertyOptions.Public, PropertyIndex.String2)
@@ -84,7 +84,7 @@ new SessionProperty(PlayerCountTestPropertyValue, VisibilityPropertyOptions.Publ
 
 Create uses `MaxPlayers = MpsRoomDefinition.MaximumPlayers`; join queries available rooms by the build index and test-room index, then joins the most recently updated compatible room. No-match throws a clear `InvalidOperationException`.
 
-- [ ] **Step 4: Re-run focused and full EditMode tests**
+- [x] **Step 4: Re-run focused and full EditMode tests**
 
 ### Task 3: Surface the test controls and status
 
@@ -96,23 +96,23 @@ Create uses `MaxPlayers = MpsRoomDefinition.MaximumPlayers`; join queries availa
 - Consumes `CreatePlayerCountTestRoomAsync()` and `JoinPlayerCountTestRoomAsync()`.
 - Adds `Create 1-6 player test room` and `Join 1-6 player test room` actions in the existing online screen.
 
-- [ ] **Step 1: Write the failing UI-facing pure-policy test**
+- [x] **Step 1: Write the failing UI-facing pure-policy test**
 
 ```csharp
 Assert.That(P2pPlayerCountPolicy.RequiresGameReady(1), Is.False);
 Assert.That(P2pPlayerCountPolicy.RequiresGameReady(2), Is.True);
 ```
 
-- [ ] **Step 2: Run it and observe the required behavior is absent**
+- [x] **Step 2: Run it and observe the required behavior is absent**
 
 Run: Unity Test Runner EditMode filter `P2pPlayerCountPolicyTests`.
 
-- [ ] **Step 3: Add only the two test-room buttons and asynchronous handlers**
+- [x] **Step 3: Add only the two test-room buttons and asynchronous handlers**
 
 Handlers set the existing connection status, set `usesMpsRelaySession` before the MPS operation, clear it on failure, and leave the existing public MPS controls untouched.
 
-- [ ] **Step 4: Document the manual verification matrix**
+- [x] **Step 4: Document the manual verification matrix**
 
 Record the host-alone, two-editor, and six-editor gates in `IMPLEMENTATION_STATUS.md`; do not claim them as performed.
 
-- [ ] **Step 5: Run focused/full EditMode tests and inspect `git diff --check`**
+- [x] **Step 5: Run focused/full EditMode tests and inspect `git diff --check`**
