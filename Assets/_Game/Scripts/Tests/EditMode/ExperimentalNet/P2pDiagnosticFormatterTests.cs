@@ -17,4 +17,17 @@ public class P2pDiagnosticFormatterTests
 
         Assert.That(summary, Is.EqualTo("[P2P:Guest] ICE Failed (generated=2, received=2, applied=2, pending=0)."));
     }
+
+    [Test]
+    public void OperationFailure_IdentifiesTheNegotiationStageAndWebRtcError()
+    {
+        string summary = P2pDiagnosticFormatter.OperationFailure(
+            false,
+            "applying remote offer",
+            "InvalidState",
+            "Failed to set remote offer sdp");
+
+        Assert.That(summary, Is.EqualTo(
+            "[P2P:Guest] applying remote offer failed (InvalidState): Failed to set remote offer sdp"));
+    }
 }

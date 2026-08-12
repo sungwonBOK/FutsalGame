@@ -219,7 +219,7 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
         if (!IsCurrent(generation) || createOffer.IsError)
         {
             if (IsCurrent(generation))
-                Fail("Could not create a direct P2P offer.");
+                FailOperation("creating local offer", "Could not create a direct P2P offer.", createOffer.Error);
             yield break;
         }
 
@@ -229,13 +229,23 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
     private IEnumerator ReceiveOfferAndSendAnswer(string sdp, int generation)
     {
         RTCSessionDescription offer = new RTCSessionDescription { type = RTCSdpType.Offer, sdp = sdp };
-        RTCSetSessionDescriptionAsyncOperation setRemote = peerConnection.SetRemoteDescription(ref offer);
+        RTCSetSessionDescriptionAsyncOperation setRemote;
+        try
+        {
+            setRemote = peerConnection.SetRemoteDescription(ref offer);
+        }
+        catch (Exception exception)
+        {
+            FailOperation("applying remote offer", "Could not apply the remote P2P offer.", exception);
+            yield break;
+        }
+
         yield return setRemote;
 
         if (!IsCurrent(generation) || setRemote.IsError)
         {
             if (IsCurrent(generation))
-                Fail("Could not apply the remote P2P offer.");
+                FailOperation("applying remote offer", "Could not apply the remote P2P offer.", setRemote.Error);
             yield break;
         }
 
@@ -248,7 +258,7 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
         if (!IsCurrent(generation) || createAnswer.IsError)
         {
             if (IsCurrent(generation))
-                Fail("Could not create a direct P2P answer.");
+                FailOperation("creating local answer", "Could not create a direct P2P answer.", createAnswer.Error);
             yield break;
         }
 
@@ -258,13 +268,23 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
     private IEnumerator ReceiveAnswer(string sdp, int generation)
     {
         RTCSessionDescription answer = new RTCSessionDescription { type = RTCSdpType.Answer, sdp = sdp };
-        RTCSetSessionDescriptionAsyncOperation setRemote = peerConnection.SetRemoteDescription(ref answer);
+        RTCSetSessionDescriptionAsyncOperation setRemote;
+        try
+        {
+            setRemote = peerConnection.SetRemoteDescription(ref answer);
+        }
+        catch (Exception exception)
+        {
+            FailOperation("applying remote answer", "Could not apply the remote P2P answer.", exception);
+            yield break;
+        }
+
         yield return setRemote;
 
         if (!IsCurrent(generation) || setRemote.IsError)
         {
             if (IsCurrent(generation))
-                Fail("Could not apply the remote P2P answer.");
+                FailOperation("applying remote answer", "Could not apply the remote P2P answer.", setRemote.Error);
             yield break;
         }
 
@@ -274,13 +294,24 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
 
     private IEnumerator SetLocalDescriptionAndSend(RTCSessionDescription description, P2pSignalKind kind, int generation)
     {
-        RTCSetSessionDescriptionAsyncOperation setLocal = peerConnection.SetLocalDescription(ref description);
+        RTCSetSessionDescriptionAsyncOperation setLocal;
+        string operation = kind == P2pSignalKind.Offer ? "applying local offer" : "applying local answer";
+        try
+        {
+            setLocal = peerConnection.SetLocalDescription(ref description);
+        }
+        catch (Exception exception)
+        {
+            FailOperation(operation, "Could not prepare the local P2P session description.", exception);
+            yield break;
+        }
+
         yield return setLocal;
 
         if (!IsCurrent(generation) || setLocal.IsError)
         {
             if (IsCurrent(generation))
-                Fail("Could not prepare the local P2P session description.");
+                FailOperation(operation, "Could not prepare the local P2P session description.", setLocal.Error);
             yield break;
         }
 
@@ -308,7 +339,7 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
         IceCandidatePayload payload = JsonUtility.FromJson<IceCandidatePayload>(json);
         if (payload == null || string.IsNullOrEmpty(payload.candidate))
         {
-            Fail("The remote P2P candidate was invalid.");
+            FailOperation("processing remote candidate", "The remote P2P candidate was invalid.", "InvalidCandidate", "The candidate payload was empty.");
             return;
         }
 
@@ -344,7 +375,7 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
         using RTCIceCandidate candidate = new RTCIceCandidate(candidateInit);
         if (!peerConnection.AddIceCandidate(candidate))
         {
-            Fail("The remote P2P candidate could not be applied.");
+            FailOperation("applying remote candidate", "The remote P2P candidate could not be applied.", "AddIceCandidate", "The WebRTC peer rejected the candidate.");
             return;
         }
 
@@ -477,6 +508,22 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
 
         ShutdownInternal(false);
         SetState(P2pConnectionState.Failed, reason);
+    }
+
+    private void FailOperation(string operation, string reason, RTCError error)
+    {
+        FailOperation(operation, reason, error.errorType.ToString(), error.message);
+    }
+
+    private void FailOperation(string operation, string reason, Exception exception)
+    {
+        FailOperation(operation, reason, exception.GetType().Name, exception.Message);
+    }
+
+    private void FailOperation(string operation, string reason, string errorType, string errorMessage)
+    {
+        Debug.LogError(P2pDiagnosticFormatter.OperationFailure(isOfferer, operation, errorType, errorMessage), this);
+        Fail(reason);
     }
 
     private void ShutdownInternal(bool announceClosed)

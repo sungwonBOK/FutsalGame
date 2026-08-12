@@ -34,6 +34,12 @@ public static class P2pDiagnosticFormatter
         return "[P2P:" + Role(isOfferer) + "] DataChannel " + state + ".";
     }
 
+    public static string OperationFailure(bool isOfferer, string operation, string errorType, string errorMessage)
+    {
+        string detail = string.IsNullOrEmpty(errorMessage) ? "No additional detail." : errorMessage;
+        return "[P2P:" + Role(isOfferer) + "] " + operation + " failed (" + errorType + "): " + detail;
+    }
+
     private static string Role(bool isOfferer)
     {
         return isOfferer ? "Host" : "Guest";
