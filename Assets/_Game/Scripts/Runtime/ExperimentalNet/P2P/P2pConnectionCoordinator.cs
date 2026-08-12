@@ -376,7 +376,7 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
         snapshotChannel.OnClose = () =>
         {
             Debug.Log(P2pDiagnosticFormatter.DataChannel(isOfferer, "closed"), this);
-            if (State == P2pConnectionState.Ready)
+            if (P2pConnectionFailurePolicy.ShouldFailOnDataChannelClose(State))
                 Fail("The direct P2P data channel closed.");
         };
         snapshotChannel.OnMessage = payload => SnapshotReceived?.Invoke(payload);
@@ -398,7 +398,9 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
             appliedCandidateCount,
             pendingCandidates.Count), this);
 
-        if (iceConnectionState == RTCIceConnectionState.Failed)
+        if (P2pConnectionFailurePolicy.ShouldFailOnTransportTerminalState(
+                iceConnectionState == RTCIceConnectionState.Failed,
+                iceConnectionState == RTCIceConnectionState.Closed))
             Fail("Direct P2P connectivity could not be established.");
     }
 
@@ -408,7 +410,7 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
         combatChannel.OnOpen = NotifyGameplayChannelsChanged;
         combatChannel.OnClose = () =>
         {
-            if (State == P2pConnectionState.Ready)
+            if (P2pConnectionFailurePolicy.ShouldFailOnDataChannelClose(State))
                 Fail("The direct P2P combat channel closed.");
         };
         combatChannel.OnMessage = payload => CombatReceived?.Invoke(payload);
@@ -421,7 +423,7 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
         ballStateChannel.OnOpen = NotifyGameplayChannelsChanged;
         ballStateChannel.OnClose = () =>
         {
-            if (State == P2pConnectionState.Ready)
+            if (P2pConnectionFailurePolicy.ShouldFailOnDataChannelClose(State))
                 Fail("The direct P2P ball state channel closed.");
         };
         ballStateChannel.OnMessage = payload => BallStateReceived?.Invoke(payload);
@@ -434,7 +436,7 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
         ballEventChannel.OnOpen = NotifyGameplayChannelsChanged;
         ballEventChannel.OnClose = () =>
         {
-            if (State == P2pConnectionState.Ready)
+            if (P2pConnectionFailurePolicy.ShouldFailOnDataChannelClose(State))
                 Fail("The direct P2P ball event channel closed.");
         };
         ballEventChannel.OnMessage = payload => BallEventReceived?.Invoke(payload);
@@ -445,7 +447,9 @@ public sealed class P2pConnectionCoordinator : MonoBehaviour
     {
         Debug.Log(P2pDiagnosticFormatter.PeerState(isOfferer, peerState.ToString()), this);
 
-        if (peerState == RTCPeerConnectionState.Failed)
+        if (P2pConnectionFailurePolicy.ShouldFailOnTransportTerminalState(
+                peerState == RTCPeerConnectionState.Failed,
+                peerState == RTCPeerConnectionState.Closed))
             Fail("The direct P2P connection failed.");
     }
 

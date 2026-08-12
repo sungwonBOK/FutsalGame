@@ -69,7 +69,6 @@ public class LobbyController : NetworkBehaviour
     private MpsRoomDefinition[] mpsRooms = Array.Empty<MpsRoomDefinition>();
     private IRoomService mpsSessionRooms;
     private bool usesMpsRelaySession;
-    private bool usesPlayerCountTestRoom;
     private IPeerSignalingTransport p2pSignalRelay;
     private P2pPeerConnectionRegistry p2pConnections;
     private string p2pStatusMessage = "Waiting for P2P mesh participants.";
@@ -566,9 +565,9 @@ public class LobbyController : NetworkBehaviour
         if (!IsServer) return;
 
         int connectedPlayerCount = NetworkManager.ConnectedClientsIds.Count;
-        if (usesPlayerCountTestRoom && !P2pPlayerCountPolicy.IsSupported(connectedPlayerCount))
+        if (usesMpsRelaySession && !P2pPlayerCountPolicy.IsSupported(connectedPlayerCount))
         {
-            p2pStatusMessage = "The player-count test supports 1 to 6 connected players.";
+            p2pStatusMessage = "MPS public rooms support 1 to 6 connected players.";
             return;
         }
 
@@ -576,7 +575,7 @@ public class LobbyController : NetworkBehaviour
         bool areAllPlayersGameReady = AreAllParticipantsGameReady();
         bool canStartWithoutDirectP2p = P2pPlayerCountPolicy.CanStartWithoutDirectP2p(
             connectedPlayerCount,
-            usesPlayerCountTestRoom);
+            usesMpsRelaySession);
         bool requiresDirectP2p = MpsNetworkingModePolicy.RequiresDirectP2p(usesMpsRelaySession)
             && !canStartWithoutDirectP2p;
         if (requiresDirectP2p)
@@ -711,12 +710,14 @@ public class LobbyController : NetworkBehaviour
             UnityTransport utp = nm.GetComponent<UnityTransport>();
             if (GUILayout.Button("방 만들기 (Host)", GUILayout.Height(44)))
             {
+                usesMpsRelaySession = false;
                 if (utp != null) utp.SetConnectionData("0.0.0.0", port, "0.0.0.0");
                 nm.StartHost();
             }
             GUILayout.Space(6);
             if (GUILayout.Button("접속 (Join)", GUILayout.Height(44)))
             {
+                usesMpsRelaySession = false;
                 if (utp != null) utp.SetConnectionData(ipAddress, port);
                 nm.StartClient();
             }
@@ -731,16 +732,6 @@ public class LobbyController : NetworkBehaviour
     /// <summary>Relay 조인코드로 방을 만들거나 참가하는 화면.</summary>
     private void DrawOnlineScreen()
     {
-        GUILayout.Label("1-6 player P2P test");
-        GUI.enabled = !isConnecting;
-        if (GUILayout.Button("Host shared 1-6 player test room", GUILayout.Height(36)))
-            _ = HostPlayerCountTestRoomAsync();
-
-        if (GUILayout.Button("Join shared 1-6 player test room", GUILayout.Height(36)))
-            _ = JoinPlayerCountTestRoomAsync();
-
-        GUI.enabled = true;
-        GUILayout.Space(12);
         GUILayout.Label("MPS public rooms");
         mpsRoomName = GUILayout.TextField(mpsRoomName, 32, GUILayout.Height(28));
 
@@ -847,7 +838,7 @@ public class LobbyController : NetworkBehaviour
     private async Task HostViaRelayAsync()
     {
         if (isConnecting) return;
-        usesPlayerCountTestRoom = false;
+        usesMpsRelaySession = false;
         isConnecting = true;
         statusMessage = "방 만드는 중...";
         hostJoinCode = "";
@@ -880,7 +871,7 @@ public class LobbyController : NetworkBehaviour
     private async Task JoinViaRelayAsync()
     {
         if (isConnecting) return;
-        usesPlayerCountTestRoom = false;
+        usesMpsRelaySession = false;
 
         string code = RelayConnectionService.NormalizeJoinCode(joinCodeInput);
         if (string.IsNullOrEmpty(code))
@@ -929,7 +920,6 @@ public class LobbyController : NetworkBehaviour
     {
         if (isConnecting) return;
 
-        usesPlayerCountTestRoom = false;
         isConnecting = true;
         usesMpsRelaySession = true;
         statusMessage = "Creating MPS Relay room...";
@@ -944,34 +934,6 @@ public class LobbyController : NetworkBehaviour
         {
             usesMpsRelaySession = false;
             statusMessage = "MPS room creation failed: " + RelayConnectionService.DescribeError(e);
-            Debug.LogException(e, this);
-        }
-        finally
-        {
-            isConnecting = false;
-        }
-    }
-
-    private async Task HostPlayerCountTestRoomAsync()
-    {
-        if (isConnecting) return;
-
-        usesPlayerCountTestRoom = true;
-        isConnecting = true;
-        usesMpsRelaySession = true;
-        statusMessage = "Creating shared 1-6 player test room...";
-        NetworkConnectionReporter.Instance?.Clear();
-
-        try
-        {
-            MpsRoomDefinition room = await GetMpsSessionRooms().CreatePlayerCountTestRoomAsync();
-            statusMessage = $"Shared 1-6 player test room created: {room.Name}";
-        }
-        catch (Exception e)
-        {
-            usesMpsRelaySession = false;
-            usesPlayerCountTestRoom = false;
-            statusMessage = "Shared test room creation failed: " + RelayConnectionService.DescribeError(e);
             Debug.LogException(e, this);
         }
         finally
@@ -1007,7 +969,6 @@ public class LobbyController : NetworkBehaviour
     {
         if (isConnecting) return;
 
-        usesPlayerCountTestRoom = false;
         isConnecting = true;
         usesMpsRelaySession = true;
         statusMessage = "Joining MPS room...";
@@ -1022,34 +983,6 @@ public class LobbyController : NetworkBehaviour
         {
             usesMpsRelaySession = false;
             statusMessage = "MPS room join failed: " + RelayConnectionService.DescribeError(e);
-            Debug.LogException(e, this);
-        }
-        finally
-        {
-            isConnecting = false;
-        }
-    }
-
-    private async Task JoinPlayerCountTestRoomAsync()
-    {
-        if (isConnecting) return;
-
-        usesPlayerCountTestRoom = true;
-        isConnecting = true;
-        usesMpsRelaySession = true;
-        statusMessage = "Joining shared 1-6 player test room...";
-        NetworkConnectionReporter.Instance?.Clear();
-
-        try
-        {
-            await GetMpsSessionRooms().JoinPlayerCountTestRoomAsync();
-            statusMessage = "Joining shared 1-6 player test room...";
-        }
-        catch (Exception e)
-        {
-            usesMpsRelaySession = false;
-            usesPlayerCountTestRoom = false;
-            statusMessage = "Shared test room join failed: " + RelayConnectionService.DescribeError(e);
             Debug.LogException(e, this);
         }
         finally
@@ -1097,19 +1030,19 @@ public class LobbyController : NetworkBehaviour
         GUILayout.Label("Direct P2P: " + p2pStatusMessage,
             new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true });
         int connectedPlayerCount = nm.ConnectedClientsIds.Count;
-        bool isSinglePlayerTest = P2pPlayerCountPolicy.CanStartWithoutDirectP2p(
+        bool isSinglePlayerMpsRoom = P2pPlayerCountPolicy.CanStartWithoutDirectP2p(
             connectedPlayerCount,
-            usesPlayerCountTestRoom);
+            usesMpsRelaySession);
         bool requiresDirectP2p = MpsNetworkingModePolicy.RequiresDirectP2p(usesMpsRelaySession)
-            && !isSinglePlayerTest;
+            && !isSinglePlayerMpsRoom;
         if (requiresDirectP2p)
         {
             GUILayout.Label("Game ready: " + gameReadyClientIds.Count + "/" + p2pParticipantClientIds.Count,
                 new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true });
         }
-        else if (isSinglePlayerTest)
+        else if (isSinglePlayerMpsRoom)
         {
-            GUILayout.Label("1-player test: no P2P peer or game-ready check is required.",
+            GUILayout.Label("1-player MPS room: no P2P peer or game-ready check is required.",
                 new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true });
         }
 

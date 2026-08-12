@@ -7,9 +7,6 @@ using System.Threading.Tasks;
 public interface IRoomService
 {
     Task<MpsRoomDefinition> CreatePublicRoomAsync(string roomName, int maxPlayers);
-    Task<MpsRoomDefinition> CreatePlayerCountTestRoomAsync();
-    Task<MpsRoomDefinition> FindPlayerCountTestRoomAsync();
     Task<MpsRoomDefinition[]> BrowsePublicRoomsAsync();
     Task JoinPublicRoomAsync(MpsRoomDefinition room);
-    Task JoinPlayerCountTestRoomAsync();
 }

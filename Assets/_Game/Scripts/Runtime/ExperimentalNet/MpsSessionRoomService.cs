@@ -6,9 +6,6 @@ using Unity.Services.Multiplayer;
 public sealed class MpsSessionRoomService : IRoomService
 {
     public const string BuildPropertyKey = "build";
-    public const string PlayerCountTestPropertyKey = "p2p-test";
-    public const string PlayerCountTestPropertyValue = "v1";
-    public const string PlayerCountTestRoomName = "P2P player-count test";
 
     private readonly string buildKey;
 
@@ -52,71 +49,6 @@ public sealed class MpsSessionRoomService : IRoomService
             buildKey);
     }
 
-    public async Task<MpsRoomDefinition> CreatePlayerCountTestRoomAsync()
-    {
-        await RelayConnectionService.InitializeAsync();
-
-        SessionOptions options = new SessionOptions
-        {
-            Name = PlayerCountTestRoomName,
-            MaxPlayers = MpsRoomDefinition.MaximumPlayers,
-            IsPrivate = false,
-            IsLocked = false,
-            SessionProperties = new Dictionary<string, SessionProperty>
-            {
-                {
-                    BuildPropertyKey,
-                    new SessionProperty(buildKey, VisibilityPropertyOptions.Public, PropertyIndex.String1)
-                },
-                {
-                    PlayerCountTestPropertyKey,
-                    new SessionProperty(PlayerCountTestPropertyValue, VisibilityPropertyOptions.Public, PropertyIndex.String2)
-                }
-            }
-        }.WithRelayNetwork(new RelayNetworkOptions());
-
-        IHostSession session = await MultiplayerService.Instance.CreateSessionAsync(options);
-        return MpsRoomDefinition.ForRemote(
-            session.Id,
-            session.Name,
-            session.MaxPlayers,
-            session.PlayerCount,
-            session.IsPrivate,
-            buildKey);
-    }
-
-    public async Task<MpsRoomDefinition> FindPlayerCountTestRoomAsync()
-    {
-        await RelayConnectionService.InitializeAsync();
-
-        QuerySessionsResults query = await MultiplayerService.Instance.QuerySessionsAsync(new QuerySessionsOptions
-        {
-            Count = 1,
-            FilterOptions = new List<FilterOption>
-            {
-                new FilterOption(FilterField.AvailableSlots, "0", FilterOperation.Greater),
-                new FilterOption(FilterField.StringIndex1, buildKey, FilterOperation.Equal),
-                new FilterOption(FilterField.StringIndex2, PlayerCountTestPropertyValue, FilterOperation.Equal)
-            },
-            SortOptions = new List<SortOption>
-            {
-                new SortOption(SortOrder.Descending, SortField.LastUpdated)
-            }
-        });
-
-        if (query.Sessions.Count == 0)
-            throw new InvalidOperationException("No shared 1-6 player test room is available. Ask the host to create one first.");
-
-        ISessionInfo session = query.Sessions[0];
-        return MpsRoomDefinition.ForRemote(
-            session.Id,
-            session.Name,
-            session.MaxPlayers,
-            session.MaxPlayers - session.AvailableSlots,
-            false,
-            buildKey);
-    }
-
     public async Task<MpsRoomDefinition[]> BrowsePublicRoomsAsync()
     {
         await RelayConnectionService.InitializeAsync();
@@ -138,12 +70,6 @@ public sealed class MpsSessionRoomService : IRoomService
         List<MpsRoomDefinition> rooms = new List<MpsRoomDefinition>(query.Sessions.Count);
         foreach (ISessionInfo session in query.Sessions)
         {
-            if (session.Properties.TryGetValue(PlayerCountTestPropertyKey, out SessionProperty testRoomProperty) &&
-                testRoomProperty.Value == PlayerCountTestPropertyValue)
-            {
-                continue;
-            }
-
             string roomBuildKey = session.Properties.TryGetValue(BuildPropertyKey, out SessionProperty buildProperty)
                 ? buildProperty.Value
                 : string.Empty;
@@ -167,11 +93,5 @@ public sealed class MpsSessionRoomService : IRoomService
 
         await RelayConnectionService.InitializeAsync();
         await MultiplayerService.Instance.JoinSessionByIdAsync(room.Id);
-    }
-
-    public async Task JoinPlayerCountTestRoomAsync()
-    {
-        MpsRoomDefinition room = await FindPlayerCountTestRoomAsync();
-        await JoinPublicRoomAsync(room);
     }
 }

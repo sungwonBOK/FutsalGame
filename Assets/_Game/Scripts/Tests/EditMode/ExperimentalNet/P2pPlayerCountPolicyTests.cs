@@ -11,10 +11,12 @@ public class P2pPlayerCountPolicyTests
     }
 
     [Test]
-    public void OnePlayer_OnlyBypassesDirectP2pInThePlayerCountTestRoom()
+    public void OnePlayer_CanBypassDirectP2pOnlyForAnMpsSession()
     {
         Assert.That(P2pPlayerCountPolicy.CanStartWithoutDirectP2p(1, true), Is.True);
         Assert.That(P2pPlayerCountPolicy.CanStartWithoutDirectP2p(1, false), Is.False);
+        Assert.That(P2pPlayerCountPolicy.CanStartWithoutDirectP2p(2, true), Is.False);
+        Assert.That(P2pPlayerCountPolicy.CanStartWithoutDirectP2p(7, true), Is.False);
     }
 
     [TestCase(2)]

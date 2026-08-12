@@ -1,5 +1,7 @@
 # MPS P2P Player-Count Test Implementation Plan
 
+> Superseded on 2026-08-12 by `2026-08-12-standard-mps-player-count-and-p2p-audit.md`; the dedicated shared test-room approach was removed in favor of the normal MPS public-room flow.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a shared one-to-six-player MPS test room and allow a host-alone match to start without direct P2P.

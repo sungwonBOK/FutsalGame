@@ -1,5 +1,7 @@
 # MPS P2P Player-Count Test Design
 
+> Superseded on 2026-08-12 by `2026-08-12-standard-mps-player-count-and-p2p-audit-design.md`; the dedicated shared test-room approach was removed in favor of the normal MPS public-room flow.
+
 ## Goal
 
 Provide one shared Editor test room for one to six players without room-name entry, room-list refresh, or join-code sharing. A lone host can start without creating a WebRTC peer; two to six connected players require the existing direct-P2P mesh and every player's Game ready acknowledgement.

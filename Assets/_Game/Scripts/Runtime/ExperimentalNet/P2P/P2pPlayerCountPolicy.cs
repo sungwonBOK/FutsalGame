@@ -15,8 +15,8 @@ public static class P2pPlayerCountPolicy
         return RequiresDirectP2p(playerCount);
     }
 
-    public static bool CanStartWithoutDirectP2p(int playerCount, bool isPlayerCountTestRoom)
+    public static bool CanStartWithoutDirectP2p(int playerCount, bool isMpsRelaySession)
     {
-        return isPlayerCountTestRoom && playerCount == 1;
+        return isMpsRelaySession && playerCount == 1;
     }
 }

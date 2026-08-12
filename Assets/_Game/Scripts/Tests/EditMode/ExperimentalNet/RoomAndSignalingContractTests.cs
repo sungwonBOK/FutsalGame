@@ -9,11 +9,11 @@ public class RoomAndSignalingContractTests
     }
 
     [Test]
-    public void RoomService_ExposesSharedPlayerCountTestRoomActions()
+    public void RoomService_DoesNotExposeDedicatedPlayerCountTestRoomActions()
     {
-        Assert.That(typeof(IRoomService).GetMethod("CreatePlayerCountTestRoomAsync"), Is.Not.Null);
-        Assert.That(typeof(IRoomService).GetMethod("FindPlayerCountTestRoomAsync"), Is.Not.Null);
-        Assert.That(typeof(IRoomService).GetMethod("JoinPlayerCountTestRoomAsync"), Is.Not.Null);
+        Assert.That(typeof(IRoomService).GetMethod("CreatePlayerCountTestRoomAsync"), Is.Null);
+        Assert.That(typeof(IRoomService).GetMethod("FindPlayerCountTestRoomAsync"), Is.Null);
+        Assert.That(typeof(IRoomService).GetMethod("JoinPlayerCountTestRoomAsync"), Is.Null);
     }
 
     [Test]
